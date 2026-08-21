@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
+  base: '/aegis-flow/',
   title: "AegisFlow",
   description: "Business Workflow & Domain Rules Verification Framework for Java & Spring Boot",
 
