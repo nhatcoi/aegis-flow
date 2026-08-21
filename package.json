@@ -1,0 +1,13 @@
+{
+  "name": "aegis-flow-docs",
+  "version": "0.1.0",
+  "description": "Documentation site for AegisFlow powered by VitePress",
+  "scripts": {
+    "docs:dev": "vitepress dev docs --port 5188",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs --port 5188"
+  },
+  "devDependencies": {
+    "vitepress": "^1.0.0-rc.44"
+  }
+}

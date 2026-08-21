@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: aegis-flow-sample-spring-boot
+
+atpm:
+  verification:
+    enabled: true
+    fail-on-error: false
+    scan-packages:
+      - io.github.aegisflow.sample.boot.workflow
+
+logging:
+  level:
+    io.github.aegisflow: DEBUG
