@@ -148,7 +148,7 @@ export default defineConfig({
       provider: 'local'
     },
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/nhatcoi/atpm-fw' }
+      { icon: 'github', link: 'https://github.com/nhatcoi/aegis-flow' }
     ]
   }
 })
