@@ -125,4 +125,4 @@ npm run docs:build
 
 ## 5. Bản Quyền
 
-Dự án được phát hành dưới giấy phép Apache License 2.0.
+Dự án được phát hành dưới giấy phép MIT License.
