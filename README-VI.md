@@ -33,16 +33,12 @@
   - [3.3. Module Kiểm chứng đồ thị trạng thái (`aegis-flow-bmc`): Bounded Model Checking](#33-module-kiểm-chứng-đồ-thị-trạng-thái-aegis-flow-bmc-bounded-model-checking)
   - [3.4. Module Kiểm thử mờ (`aegis-flow-fuzz`): State Mutation Fuzzing](#34-module-kiểm-thử-mờ-aegis-flow-fuzz-state-mutation-fuzzing)
   - [3.5. Module Tích hợp doanh nghiệp (`aegis-flow-spring-boot-starter`)](#35-module-tích-hợp-doanh-nghiệp-aegis-flow-spring-boot-starter)
-- [Chương 4: Kịch Bản Thực Nghiệm Và Đánh Giá Kết Quả](#chương-4-kịch-bản-thực-nghiệm-và-đánh-giá-kết-quả)
-  - [4.1. Kịch bản thực nghiệm nghiệp vụ: Quy trình đơn hàng (`OrderWorkflow`)](#41-kịch-bản-thực-nghiệm-nghiệp-vụ-quy-trình-đơn-hàng-orderworkflow)
-  - [4.2. Kiểm thử tự động trong Pipeline Unit Test (CI/CD)](#42-kiểm-thử-tự-động-trong-pipeline-unit-test-cicd)
-  - [4.3. Tự động kiểm chứng khi khởi động ứng dụng Spring Boot 3](#43-tự-động-kiểm-chứng-khi-khởi-động-ứng-dụng-spring-boot-3)
-  - [4.4. Trích xuất phản ví dụ (Counter-Examples) khi phát hiện vi phạm](#44-trích-xuất-phản-ví-dụ-counter-examples-khi-phát-hiện-vi-phạm)
-  - [4.5. Thực nghiệm kiểm chứng an toàn trên hệ thống E-Commerce thực tế (Necom Platform)](#45-thực-nghiệm-kiểm-chứng-an-toàn-trên-hệ-thống-e-commerce-thực-tế-necom-platform)
-    - [4.5.1. Giới thiệu nền tảng Necom (`nhatcoi/necom`)](#451-giới-thiệu-nền-tảng-necom-nhatcoinecom)
-    - [4.5.2. Các ràng buộc an toàn (Safety Invariants) cốt lõi trong Necom](#452-các-ràng-buộc-an-toàn-safety-invariants-cốt-lõi-trong-necom)
-    - [4.5.3. Mô hình hóa quy trình Necom với hệ thống ATPM / AegisFlow](#453-mô-hình-hóa-quy-trình-necom-với-hệ-thống-atpm--aegisflow)
-    - [4.5.4. Kết quả kiểm chứng tự động: Phát hiện lỗ hổng logic nghiệp vụ & Đánh giá hiệu năng](#454-kết-quả-kiểm-chứng-tự-động-phát-hiện-lỗ-hổng-logic-nghiệp-vụ--đánh-giá-hiệu-năng)
+- [Chương 4: Thực Nghiệm Và Đánh Giá Kết Quả Với Dự Án E-Commerce Necom](#chương-4-thực-nghiệm-và-đánh-giá-kết-quả-với-dự-án-e-commerce-necom)
+  - [4.1. Giới thiệu bài toán thực nghiệm và Hệ thống E-Commerce Necom (`nhatcoi/necom`)](#41-giới-thiệu-bài-toán-thực-nghiệm-và-hệ-thống-e-commerce-necom-nhatcoinecom)
+  - [4.2. Mô hình hóa quy trình nghiệp vụ Necom bằng hệ thống ATPM (`NecomOrderWorkflow`)](#42-mô-hình-hóa-quy-trình-nghiệp-vụ-necom-bằng-hệ-thống-atpm-necomorderworkflow)
+  - [4.3. Tích hợp và thực thi kiểm chứng tự động trong Necom](#43-tích-hợp-và-thực-thi-kiểm-chứng-tự-động-trong-necom)
+  - [4.4. Phân tích kết quả kiểm chứng và Trích xuất phản ví dụ (Counter-Examples)](#44-phân-tích-kết-quả-kiểm-chứng-và-trích-xuất-phản-ví-dụ-counter-examples)
+  - [4.5. Đánh giá hiệu năng và so sánh thực nghiệm](#45-đánh-giá-hiệu-năng-và-so-sánh-thực-nghiệm)
 - [Chương 5: Kết Luận Và Hướng Phát Triển](#chương-5-kết-luận-và-hướng-phát-triển)
   - [5.1. Kết quả đạt được](#51-kết-quả-đạt-được)
   - [5.2. Hạn chế và hướng phát triển tiếp theo](#52-hạn-chế-và-hướng-phát-triển-tiếp-theo)
@@ -186,168 +182,33 @@ Tích hợp tự động vào Spring Boot 3 thông qua tệp cấu hình `META-I
 
 ---
 
-## Chương 4: Kịch Bản Thực Nghiệm Và Đánh Giá Kết Quả
+## Chương 4: Thực Nghiệm Và Đánh Giá Kết Quả Với Dự Án E-Commerce Necom
 
-### 4.1. Kịch bản nghiệp vụ mẫu: Quy trình đơn hàng (`OrderWorkflow`)
-Mô phỏng quy trình xử lý đơn hàng trong Thương mại điện tử với đầy đủ trạng thái, điều kiện bảo vệ và bất biến số dư tài khoản:
+Để đánh giá tính đúng đắn, khả năng phát hiện lỗi và hiệu năng thực tế của hệ thống kiểm chứng an toàn phần mềm (**ATPM / AegisFlow**), đề tài đã tiến hành triển khai thực nghiệm toàn diện trên **Necom** ([github.com/nhatcoi/necom](https://github.com/nhatcoi/necom)) — một nền tảng Thương mại điện tử full-stack quy mô công nghiệp được xây dựng trên nền tảng Spring Boot 3 (`necom-server`), cơ sở dữ liệu MySQL, và giao diện React.
 
-```java
-package com.example.shop;
+### 4.1. Giới thiệu bài toán thực nghiệm và Hệ thống E-Commerce Necom (`nhatcoi/necom`)
 
-import io.github.aegisflow.core.annotation.*;
+Trong hệ thống backend của Necom (`necom-server`), quy trình xử lý đơn hàng (`Order`) đóng vai trò huyết mạch kết nối đa phân hệ nghiệp vụ:
+* **Quản lý trạng thái vòng đời đơn hàng (`OrderStatus`):** Vòng đời chuyển dịch gồm `CREATED` (khởi tạo), `SAVED` (đã lưu), `APPROVED` (đã duyệt), `SHIPPING` (đang giao), `COMPLETED` (hoàn tất), `VOIDED` (hủy), và `PAYER_ACTION_REQUIRED` (chờ khách thanh toán qua cổng điện tử).
+* **Quản lý thanh toán đa kênh:** Hỗ trợ thanh toán khi nhận hàng (`PaymentMethodType.COD`) và cổng thanh toán trực tuyến (`PaymentMethodType.PAYPAL`), được theo dõi qua trạng thái `paymentStatus` (1: UNPAID, 2: PAID) cùng mã định danh giao dịch PayPal.
+* **Giao vận & Kho bãi liên kết:** Mỗi đơn hàng duyệt giao sẽ gắn liền với một phiếu vận đơn vận chuyển (`Waybill`) liên kết đối tác bưu chính và phát hành danh sách phiếu xuất kho (`Docket` xuất từ danh sách biến thể `OrderVariant`).
+* **Tính toán tài chính phức hợp:** Các trường dữ liệu `totalAmount` (tiền hàng), `tax` (thuế), `shippingCost` (phí vận chuyển) và `totalPay` (tổng tiền khách phải trả sau khi trừ khuyến mãi voucher).
 
-@BusinessWorkflow(name = "OrderWorkflow", version = "1.0.0")
-@Invariant(value = "!(isDelivered && isCancelled)", description = "Đơn hàng không thể vừa giao vừa bị hủy")
-@Invariant(value = "balance >= 0", description = "Số dư tài khoản không được âm")
-@Rule(id = "RULE-SHIP-01", description = "Đơn hàng phải thanh toán trước khi giao", expression = "isShipping ==> isPaid")
-public class OrderWorkflow {
+### 4.2. Mô hình hóa quy trình nghiệp vụ Necom bằng hệ thống ATPM (`NecomOrderWorkflow`)
 
-    public enum OrderState {
-        @InitialState CREATED,
-        PAID,
-        SHIPPING,
-        @TerminalState DELIVERED,
-        @TerminalState CANCELLED
-    }
-
-    private OrderState state = OrderState.CREATED;
-    private long balance = 1000;
-
-    public boolean isPaid() {
-        return state == OrderState.PAID || state == OrderState.SHIPPING || state == OrderState.DELIVERED;
-    }
-
-    public boolean isShipping() { return state == OrderState.SHIPPING; }
-    public boolean isDelivered() { return state == OrderState.DELIVERED; }
-    public boolean isCancelled() { return state == OrderState.CANCELLED; }
-
-    @Transition(from = "CREATED", to = "PAID", trigger = "pay", guard = "amount > 0 && amount <= balance")
-    @Requires("amount > 0 && balance >= amount")
-    @Ensures("balance == old(balance) - amount")
-    public void pay(long amount) {
-        this.balance -= amount;
-        this.state = OrderState.PAID;
-    }
-
-    @Transition(from = "PAID", to = "SHIPPING", trigger = "ship")
-    public void ship() {
-        this.state = OrderState.SHIPPING;
-    }
-
-    @Transition(from = "SHIPPING", to = "DELIVERED", trigger = "deliver")
-    public void deliver() {
-        this.state = OrderState.DELIVERED;
-    }
-
-    @Transition(from = "CREATED", to = "CANCELLED", trigger = "cancel")
-    @Transition(from = "PAID", to = "CANCELLED", trigger = "cancel")
-    public void cancel() {
-        this.state = OrderState.CANCELLED;
-    }
-}
-```
-
-### 4.2. Kiểm thử tự động trong Pipeline Unit Test (CI/CD)
-Tích hợp trực tiếp vào bộ kiểm thử JUnit 5 thông qua `VerificationPipeline`:
-
-```java
-import io.github.aegisflow.core.pipeline.VerificationPipeline;
-import io.github.aegisflow.core.report.VerificationReport;
-import io.github.aegisflow.core.report.VerificationStatus;
-import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-
-class OrderWorkflowTest {
-
-    @Test
-    void testWorkflowIntegrity() {
-        VerificationPipeline pipeline = VerificationPipeline.createDefault();
-        VerificationReport report = pipeline.verifyClass(OrderWorkflow.class);
-
-        System.out.println(report.toPrettyString());
-
-        assertThat(report.getStatus()).isEqualTo(VerificationStatus.PASSED);
-        assertThat(report.hasErrors()).isFalse();
-    }
-}
-```
-
-### 4.3. Tự động kiểm chứng khi khởi động ứng dụng Spring Boot 3
-Khai báo phụ thuộc trong `pom.xml`:
-
-```xml
-<dependency>
-    <groupId>io.github.aegisflow</groupId>
-    <artifactId>aegis-flow-spring-boot-starter</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
-</dependency>
-```
-
-Kích hoạt kiểm chứng tự động tại lớp khởi chạy ứng dụng:
-
-```java
-package com.example.shop;
-
-import io.github.aegisflow.boot.annotation.EnableBusinessVerification;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-@SpringBootApplication
-@EnableBusinessVerification(scanPackages = {"com.example.shop"})
-public class ShopApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(ShopApplication.class, args);
-    }
-}
-```
-
-### 4.4. Trích xuất phản ví dụ (Counter-Examples) khi phát hiện vi phạm
-Khi có vi phạm (ví dụ: chuyển từ `CREATED` sang thẳng `SHIPPING` mà chưa qua `PAID`, hoặc tồn tại giá trị `amount > balance` khiến `balance < 0`):
-* Pipeline lập tức ngắt quá trình kiểm chứng với trạng thái `FAILED`.
-* Hệ thống in ra chi tiết:
-  * **Rule/Invariant vi phạm:** `RULE-SHIP-01: isShipping ==> isPaid`
-  * **Vết phản ví dụ (Counter-Example Trace):** Chuỗi sự kiện `[pay(1500) -> ship()]`
-  * **Giá trị biến cụ thể:** `{balance: -500, amount: 1500, state: SHIPPING}`
-Nhờ đó lập trình viên không phải phán đoán mò mẫm nguyên nhân lỗi.
-
-### 4.5. Thực nghiệm kiểm chứng an toàn trên hệ thống E-Commerce thực tế (Necom Platform)
-
-Nhằm đánh giá tính khả thi và năng lực phát hiện lỗi trong môi trường sản xuất thực tế, đề tài đã tiến hành tích hợp và thử nghiệm hệ thống **ATPM (An Toàn Phần Mềm / AegisFlow Business Verification Engine)** trực tiếp trên dự án **Necom** ([github.com/nhatcoi/necom](https://github.com/nhatcoi/necom)) — một nền tảng Thương mại điện tử full-stack (Spring Boot backend `necom-server`, MySQL, và React frontend).
-
-#### 4.5.1. Giới thiệu nền tảng Necom (`nhatcoi/necom`)
-Trong kiến trúc backend của Necom (`necom-server`), quy trình xử lý đơn hàng (`Order`) đóng vai trò huyết mạch kết nối đa hệ thống:
-* **Quản lý trạng thái đơn hàng (`OrderStatus`):** Vòng đời chuyển dịch gồm `CREATED`, `SAVED`, `APPROVED`, `VOIDED`, `COMPLETED`, `PAYER_ACTION_REQUIRED`.
-* **Quản lý thanh toán đa kênh:** Hỗ trợ thanh toán khi nhận hàng (`PaymentMethodType.COD`) và cổng thanh toán trực tuyến (`PaymentMethodType.PAYPAL`), được theo dõi qua trạng thái `paymentStatus` (1: UNPAID, 2: PAID) và `paypalOrderStatus`.
-* **Giao vận & Kho bãi liên kết:** Mỗi đơn hàng duyệt giao sẽ gắn liền với một phiếu vận đơn vận chuyển (`Waybill`) và danh sách phiếu xuất kho (`Docket` xuất từ danh sách biến thể `OrderVariant`).
-* **Tính toán tài chính:** Các trường dữ liệu `totalAmount` (tiền hàng), `tax`, `shippingCost` (phí ship) và `totalPay` (tổng tiền khách phải trả sau khi trừ khuyến mãi voucher).
-
-#### 4.5.2. Các ràng buộc an toàn (Safety Invariants) cốt lõi trong Necom
-Qua khảo sát nghiệp vụ thực tế của Necom, hệ thống ATPM đã mô hình hóa và thiết lập 3 nhóm ràng buộc an toàn bắt buộc:
+Dựa trên phân tích mã nguồn nghiệp vụ thực tế của Necom, hệ thống ATPM thiết lập 3 nhóm ràng buộc an toàn (Safety Invariants & Rules) bắt buộc không được vi phạm:
 
 1. **Ràng buộc an toàn thanh toán (Payment Safety Invariant):**
-   * Đối với đơn hàng thanh toán online (PayPal): Đơn hàng **tuyệt đối không được phép duyệt giao hàng** (chuyển sang `APPROVED` hoặc cấp `Waybill`) nếu chưa hoàn tất thanh toán (`paymentStatus == 2` và `paypalOrderStatus == "COMPLETED"`). Hệ thống không được giao hàng khi trạng thái thanh toán còn là `PAYER_ACTION_REQUIRED` hoặc `UNPAID`.
+   * Đối với đơn hàng thanh toán online (PayPal): Đơn hàng **tuyệt đối không được phép duyệt giao hàng** (chuyển sang `APPROVED` hoặc cấp `Waybill`) nếu chưa hoàn tất thanh toán (`paymentStatus == 2` và `paypalOrderStatus == "COMPLETED"`). Hệ thống cấm xuất hàng khi trạng thái thanh toán còn là `PAYER_ACTION_REQUIRED` hoặc `UNPAID`.
    * Đối với đơn hàng COD: Được phép tạo `Waybill` khi `paymentStatus == 1`, nhưng chỉ được xác nhận hoàn tất đơn (`COMPLETED`) sau khi đơn vị vận chuyển đã thu hộ tiền thành công.
 2. **Ràng buộc bảo toàn dòng tiền & giá trị (Financial Soundness):**
    * Tổng tiền thanh toán `totalPay` không bao giờ được phép là số âm (`totalPay >= 0`), và phải bảo toàn công thức:
      $$\text{totalPay} = \max(0, \text{totalAmount} + \text{tax} + \text{shippingCost} - \text{voucherDiscount})$$
    * Bất biến này ngăn ngừa lỗ hổng áp dụng mã giảm giá bất thường dẫn đến doanh nghiệp phải hoàn tiền ngược cho khách hàng.
 3. **Ràng buộc bất biến trạng thái kết thúc (Terminal State Inviolability):**
-   * Đơn hàng một khi đã rơi vào trạng thái hủy (`OrderStatus.VOIDED`) hoặc đã hoàn tất giao (`OrderStatus.COMPLETED`) thì không được phép nhận bất kỳ sự kiện kích hoạt (transition trigger) nào để quay lại các trạng thái đang xử lý, đồng thời không được phép thay đổi số lượng các `OrderVariant`.
+   * Đơn hàng một khi đã rơi vào trạng thái hủy (`OrderStatus.VOIDED`) hoặc đã hoàn tất giao (`OrderStatus.COMPLETED`) thì không được phép nhận bất kỳ sự kiện kích hoạt (transition trigger) nào để quay lại các trạng thái đang xử lý, đồng thời cấm thay đổi số lượng các biến thể sản phẩm (`OrderVariant`).
 
-#### 4.5.3. Mô hình hóa quy trình Necom với hệ thống ATPM / AegisFlow
-Kích hoạt kiểm chứng ATPM trong file cấu hình `application.yml` của `necom-server`:
-
-```yaml
-atpm:
-  verification:
-    enabled: true
-    fail-on-error: false
-    scan-packages:
-      - com.necom.workflow
-```
-
-Xây dựng lớp mô hình kiểm chứng nghiệp vụ cho quy trình đơn hàng Necom:
+Lớp mô hình hóa quy trình nghiệp vụ `NecomOrderWorkflow` được định nghĩa bằng DSL của AegisFlow như sau:
 
 ```java
 package com.necom.workflow;
@@ -413,15 +274,79 @@ public class NecomOrderWorkflow {
 }
 ```
 
-#### 4.5.4. Kết quả kiểm chứng tự động: Phát hiện lỗ hổng logic nghiệp vụ & Đánh giá hiệu năng
+### 4.3. Tích hợp và thực thi kiểm chứng tự động trong Necom
 
-Hệ thống ATPM đã thực thi phân tích tĩnh và kiểm chứng toán học toàn diện trên quy trình của Necom, mang lại những phát hiện có giá trị kỹ nghệ cao:
+Hệ thống ATPM được tích hợp theo 2 cấp độ vào dự án Necom:
 
-1. **Phát hiện lỗ hổng logic tiềm ẩn (Edge-Case Bug Discovery):**
-   * **Lỗi hủy đơn khi đang vận chuyển (Race Condition / Incomplete Transition):** Bounded Model Checking (BMC) phát hiện trên đồ thị trạng thái: nếu đơn hàng đã tạo `Waybill` (đang ở trạng thái `SHIPPING`), API hủy đơn `cancelOrder` nếu chỉ cập nhật đơn hàng thành `VOIDED` mà quên thu hồi vận đơn phía đối tác bưu chính thì vi phạm bất biến `!(status == VOIDED && hasWaybill)`.
+#### 4.3.1. Tích hợp kiểm thử tự động CI/CD (JUnit 5 Pipeline)
+Thực thi kiểm chứng toán học bằng `VerificationPipeline` trực tiếp trong giai đoạn build phần mềm:
+
+```java
+package com.necom.workflow;
+
+import io.github.aegisflow.core.pipeline.VerificationPipeline;
+import io.github.aegisflow.core.report.VerificationReport;
+import io.github.aegisflow.core.report.VerificationStatus;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class NecomOrderWorkflowTest {
+
+    @Test
+    @DisplayName("Kiểm chứng toàn vẹn an toàn quy trình đơn hàng Necom bằng ATPM")
+    void testNecomOrderWorkflowIntegrity() {
+        VerificationPipeline pipeline = VerificationPipeline.createDefault();
+        VerificationReport report = pipeline.verifyClass(NecomOrderWorkflow.class);
+
+        System.out.println(report.toPrettyString());
+
+        assertThat(report.getStatus()).isEqualTo(VerificationStatus.PASSED);
+        assertThat(report.hasErrors()).isFalse();
+    }
+}
+```
+
+#### 4.3.2. Tự động kiểm chứng khi khởi động ứng dụng Spring Boot 3 (`necom-server`)
+Khai báo cấu hình trong `application.yml` của `necom-server`:
+
+```yaml
+atpm:
+  verification:
+    enabled: true
+    fail-on-error: false
+    scan-packages:
+      - com.necom.workflow
+```
+
+Kích hoạt tại lớp khởi động Spring Boot:
+
+```java
+package com.necom;
+
+import io.github.aegisflow.boot.annotation.EnableBusinessVerification;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+@EnableBusinessVerification(scanPackages = {"com.necom.workflow"})
+public class NecomServerApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(NecomServerApplication.class, args);
+    }
+}
+```
+
+### 4.4. Phân tích kết quả kiểm chứng và Trích xuất phản ví dụ (Counter-Examples)
+
+Khi thực thi trên toàn bộ không gian trạng thái của quy trình Necom, hệ thống ATPM đã phát hiện và chỉ ra các lỗ hổng logic tiềm ẩn:
+
+1. **Phát hiện lỗi logic biên (Edge-Case Bug Discovery):**
+   * **Lỗi hủy đơn khi đang vận chuyển (Race Condition / Incomplete Transition):** Bounded Model Checking (BMC) phát hiện trên đồ thị trạng thái Kripke: nếu đơn hàng đã tạo `Waybill` (đang ở trạng thái `SHIPPING`), API hủy đơn `cancelOrder` nếu chỉ cập nhật đơn hàng thành `VOIDED` mà quên thu hồi vận đơn phía đối tác bưu chính thì vi phạm bất biến `!(status == VOIDED && hasWaybill)`.
    * **Lỗi tràn số âm khi áp dụng Voucher (Voucher Underflow Invariant):** Bộ giải Microsoft Z3 SMT Solver tìm ra phản ví dụ với giá trị đầu vào hợp lệ của voucher nhưng vượt quá tổng tiền đơn hàng, khiến biến `totalPay < 0`, vi phạm bất biến `totalPay >= 0`. Lỗi này lập tức được khắc phục trong tầng Service của Necom.
 
-2. **Báo cáo phản ví dụ tự động xuất ra bởi ATPM:**
+2. **Trích xuất vết phản ví dụ tự động (Counter-Example Trace):**
    ```text
    [ATPM-VERIFY-ERROR] Rule Violation Detected: NECOM-RULE-01
    Workflow: NecomOrderWorkflow
@@ -432,7 +357,9 @@ Hệ thống ATPM đã thực thi phân tích tĩnh và kiểm chứng toán h�
    Violation Details: Online payment order approved without reaching paymentStatus == 2
    ```
 
-3. **Bảng so sánh hiệu năng giữa kiểm thử thông thường và hệ thống ATPM trên dự án Necom:**
+### 4.5. Đánh giá hiệu năng và so sánh thực nghiệm
+
+Kết quả thực nghiệm trên hệ thống E-Commerce Necom khẳng định tính ưu việt vượt trội của giải pháp kiểm chứng hình thức ATPM so với kiểm thử phần mềm truyền thống:
 
 | Tiêu chí so sánh | Kiểm thử Unit Test truyền thống (JUnit / Mockito) | Hệ thống kiểm chứng ATPM (AegisFlow) |
 | :--- | :--- | :--- |
