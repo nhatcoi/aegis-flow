@@ -41,7 +41,7 @@
   - [4.5. Đánh giá hiệu năng và so sánh thực nghiệm](#45-đánh-giá-hiệu-năng-và-so-sánh-thực-nghiệm)
 - [Chương 5: Kết Luận Và Hướng Phát Triển](#chương-5-kết-luận-và-hướng-phát-triển)
   - [5.1. Kết quả đạt được](#51-kết-quả-đạt-được)
-  - [5.2. Hạn chế và hướng phát triển tiếp theo (Lộ trình phục vụ toàn diện E-Commerce)](#52-hạn-chế-và-hướng-phát-triển-tiếp-theo-lộ-trình-phục-vụ-toàn-diện-e-commerce)
+  - [5.2. Hạn chế và hướng phát triển tiếp theo ](#52-hạn-chế-và-hướng-phát-triển-tiếp-theo-lộ-trình-phục-vụ-toàn-diện-e-commerce)
 - [Tài Liệu Tham Khảo & Giấy Phép](#tài-liệu-tham-khảo--giấy-phép)
 
 ---
@@ -378,8 +378,7 @@ Kết quả thực nghiệm trên hệ thống E-Commerce Necom khẳng định 
 2. **Xây dựng giải pháp thực nghiệm:** Hiện thực hóa hoàn chỉnh framework **AegisFlow** với kiến trúc Micro-Kernel module hóa, hỗ trợ tích hợp Z3 SMT Solver, BMC và State Fuzzing.
 3. **Tính ứng dụng thực tiễn cao:** Tích hợp trực tiếp vào hệ sinh thái Java 21 và Spring Boot 3 phổ biến, cho phép triển khai ngay trong quy trình CI/CD và runtime mà không làm thay đổi thói quen lập trình của kỹ sư phần mềm.
 
-### 5.2. Hạn chế và hướng phát triển tiếp theo (Lộ trình phục vụ toàn diện E-Commerce)
-
+### 5.2. Hạn chế và hướng phát triển tiếp theo 
 #### 5.2.1. Hạn chế hiện tại của Framework
 * **Phạm vi mô hình hóa đơn thực thể:** Framework hiện tại chủ yếu tập trung kiểm chứng máy trạng thái trên từng lớp Workflow đơn lẻ (`Single-Class Workflow`), chưa có cơ chế tự động xâu chuỗi quan hệ dữ liệu liên thực thể (Multi-Entity Aggregates).
 * **Kiểm chứng đa luồng và chuỗi phức tạp:** Việc giải quyết các ràng buộc kiểu chuỗi ký tự (String constraints) và kiểm chứng bài toán tương tranh thời gian thực (Concurrency verification) ở quy mô hàng nghìn giao dịch/giây vẫn cần thời gian tính toán lớn từ SMT Solver.
