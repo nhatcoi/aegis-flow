@@ -41,7 +41,7 @@
   - [4.5. Đánh giá hiệu năng và so sánh thực nghiệm](#45-đánh-giá-hiệu-năng-và-so-sánh-thực-nghiệm)
 - [Chương 5: Kết Luận Và Hướng Phát Triển](#chương-5-kết-luận-và-hướng-phát-triển)
   - [5.1. Kết quả đạt được](#51-kết-quả-đạt-được)
-  - [5.2. Hạn chế và hướng phát triển tiếp theo](#52-hạn-chế-và-hướng-phát-triển-tiếp-theo)
+  - [5.2. Hạn chế và hướng phát triển tiếp theo (Lộ trình phục vụ toàn diện E-Commerce)](#52-hạn-chế-và-hướng-phát-triển-tiếp-theo-lộ-trình-phục-vụ-toàn-diện-e-commerce)
 - [Tài Liệu Tham Khảo & Giấy Phép](#tài-liệu-tham-khảo--giấy-phép)
 
 ---
@@ -378,11 +378,35 @@ Kết quả thực nghiệm trên hệ thống E-Commerce Necom khẳng định 
 2. **Xây dựng giải pháp thực nghiệm:** Hiện thực hóa hoàn chỉnh framework **AegisFlow** với kiến trúc Micro-Kernel module hóa, hỗ trợ tích hợp Z3 SMT Solver, BMC và State Fuzzing.
 3. **Tính ứng dụng thực tiễn cao:** Tích hợp trực tiếp vào hệ sinh thái Java 21 và Spring Boot 3 phổ biến, cho phép triển khai ngay trong quy trình CI/CD và runtime mà không làm thay đổi thói quen lập trình của kỹ sư phần mềm.
 
-### 5.2. Hạn chế và hướng phát triển tiếp theo
-* **Hạn chế:** Bài toán giải SMT đối với các chuỗi ký tự (String constraints) phức tạp hoặc các thao tác đa luồng bất đồng bộ (Asynchronous concurrency) còn đòi hỏi thời gian xử lý cao.
-* **Hướng phát triển tiếp theo:**
-  * Mở rộng kiểm chứng các giao dịch phân tán (Saga Pattern / Event Sourcing) trên Apache Kafka / RabbitMQ.
-  * Tích hợp plugin phân tích tĩnh bytecode (ASM / Byte Buddy) nhằm tự động sinh ra các ràng buộc bất biến mà không cần lập trình viên chú thích thủ công.
+### 5.2. Hạn chế và hướng phát triển tiếp theo (Lộ trình phục vụ toàn diện E-Commerce)
+
+#### 5.2.1. Hạn chế hiện tại của Framework
+* **Phạm vi mô hình hóa đơn thực thể:** Framework hiện tại chủ yếu tập trung kiểm chứng máy trạng thái trên từng lớp Workflow đơn lẻ (`Single-Class Workflow`), chưa có cơ chế tự động xâu chuỗi quan hệ dữ liệu liên thực thể (Multi-Entity Aggregates).
+* **Kiểm chứng đa luồng và chuỗi phức tạp:** Việc giải quyết các ràng buộc kiểu chuỗi ký tự (String constraints) và kiểm chứng bài toán tương tranh thời gian thực (Concurrency verification) ở quy mô hàng nghìn giao dịch/giây vẫn cần thời gian tính toán lớn từ SMT Solver.
+
+#### 5.2.2. Các phân hệ trọng yếu cần phát triển thêm để phục vụ toàn diện Necom E-Commerce
+Để chuyển hóa từ một công cụ kiểm chứng logic đơn thuần thành **Lá chắn nghiệp vụ toàn diện (Enterprise Business Firewall)** bảo vệ 100% các phân hệ của Necom, lộ trình phát triển tiếp theo tập trung vào 6 khối tính năng:
+
+1. **Kiểm chứng liên thực thể (Cross-Entity & Composite Workflow Verification):**
+   * Mở rộng engine để kiểm chứng tính nhất quán giữa các thực thể phụ thuộc chéo trong Necom: `Order` ⇄ `OrderVariant` ⇄ `Docket` (Phiếu xuất kho) ⇄ `Waybill` (Vận đơn) ⇄ `Cashbook` (Sổ quỹ tiền mặt).
+   * Đảm bảo trạng thái của vận đơn và phiếu xuất kho luôn đồng bộ tuyệt đối với vòng đời đơn hàng.
+
+2. **Kiểm chứng tương tranh & Chống bán âm tồn kho (Concurrency & Overselling Proof):**
+   * Xây dựng engine kiểm chứng tương tranh (Race-Condition & Concurrency Checker), chứng minh bằng mô hình toán học rằng các giao dịch trừ kho đồng thời (Optimistic/Pessimistic Locking) trong các sự kiện Flash-sale luôn đảm bảo bất biến: $\text{currentStock} \ge 0$.
+
+3. **Mô hình hóa sự kiện bất đồng bộ & Tính lũy thừa (Async Event & Idempotency Checking):**
+   * Mô hình hóa kiểm chứng các Webhook bên thứ 3 trong Necom (cổng thanh toán PayPal IPN, đối tác giao vận bưu chính).
+   * Chứng minh tính lũy thừa (Idempotency): Đảm bảo hệ thống không bị nhảy trạng thái sai lệch ngay cả khi Webhook gửi trùng lặp, gửi trễ hoặc gửi sai thứ tự thời gian.
+
+4. **Kiểm chứng giao dịch bù (Saga Pattern & Compensating Transaction Verification):**
+   * Tự động chứng minh tính toàn vẹn của chuỗi giao dịch bù (Rollback/Compensating Transactions) khi đơn hàng bị hủy (`VOIDED`): Cam kết thu hồi vận đơn và hoàn trả số lượng xuất kho (`Docket`) về kho hàng một cách nguyên tử, triệt tiêu nguy cơ thất thoát hàng hóa.
+
+5. **Mở rộng DSL cho Luật Khuyến Mãi & Tích Điểm (Voucher & Loyalty Anti-Fraud):**
+   * Bổ sung DSL biểu diễn các luật chống gian lận chính sách thương mại: Ngăn chặn áp dụng chồng chéo mã giảm giá (Anti-stacking vouchers), kiểm soát hạn mức tích lũy và đổi điểm thưởng khách hàng thân thiết (`Reward points`).
+
+6. **Lá chắn thời gian thực tại tầng Dữ liệu (Runtime JPA / Hibernate Entity Interceptor):**
+   * Xây dựng bộ bắt chặn (Interceptor) tích hợp trực tiếp vào Hibernate/JPA của `necom-server`.
+   * Tự động suy diễn bất biến từ cấu trúc bảng DB (`@Column`, `@ManyToOne`) và chặn đứng (Rollback) ngay lập tức các transaction vi phạm quy tắc an toàn trước khi lệnh `COMMIT` được ghi xuống MySQL.
 
 ---
 
