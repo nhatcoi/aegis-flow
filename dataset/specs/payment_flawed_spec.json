@@ -1,0 +1,99 @@
+{
+  "name": "payment_flawed_demo",
+  "description": "Mô hình thanh toán CÓ LỖI THIẾT KẾ: Vi phạm an toàn khi cho phép giao hàng trực tiếp từ PENDING mà chưa thu tiền (Unpaid Shipping), và rơi vào DEADLOCK ở trạng thái UNKNOWN khi cổng bị timeout.",
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "text": "Không được giao hàng khi chưa có xác nhận thanh toán",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-2",
+      "text": "Không được để xảy ra Deadlock khi mất kết nối",
+      "category": "liveness",
+      "priority": "HIGH"
+    }
+  ],
+  "state_machine": {
+    "states": [
+      "CREATED",
+      "PENDING",
+      "UNKNOWN",
+      "SUCCEEDED",
+      "SHIPPED"
+    ],
+    "initial": [
+      "CREATED"
+    ],
+    "labeling": {
+      "CREATED": [
+        "initial"
+      ],
+      "PENDING": [
+        "processing"
+      ],
+      "UNKNOWN": [
+        "timeout",
+        "violation"
+      ],
+      "SUCCEEDED": [
+        "paid",
+        "trusted"
+      ],
+      "SHIPPED": [
+        "shipped",
+        "trusted",
+        "violation"
+      ]
+    },
+    "transitions": [
+      [
+        "CREATED",
+        "PENDING"
+      ],
+      [
+        "PENDING",
+        "UNKNOWN"
+      ],
+      [
+        "PENDING",
+        "SHIPPED"
+      ],
+      [
+        "SUCCEEDED",
+        "SHIPPED"
+      ]
+    ]
+  },
+  "safety_properties": [
+    "AG(!violation)"
+  ],
+  "mutual_exclusion": {
+    "atom1": "processing",
+    "atom2": "shipped"
+  },
+  "functions": [
+    {
+      "name": "parse_webhook_signature",
+      "language": "c",
+      "kind": "buffer_copy",
+      "params": [
+        "raw_signature"
+      ],
+      "buffer_size": 16,
+      "bug": "buffer-overflow"
+    }
+  ],
+  "arithmetic_checks": [
+    {
+      "name": "payment_amount_overflow",
+      "int_vars": [
+        "amount",
+        "shipping_fee"
+      ],
+      "condition": "amount > 0 and shipping_fee > 0 and amount > 2000000000",
+      "overflow_expr": "amount + shipping_fee"
+    }
+  ]
+}

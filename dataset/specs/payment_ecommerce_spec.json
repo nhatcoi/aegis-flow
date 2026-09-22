@@ -1,0 +1,341 @@
+{
+  "name": "payment_ecommerce",
+  "description": "Hệ thống thanh toán trực tuyến Ecommerce: mô hình hóa vòng đời đơn hàng, xác thực webhook từ cổng thanh toán, ngăn chặn giao hàng chưa thanh toán (Unpaid Shipping), bế tắc khi timeout (Deadlock) và kiểm tra an toàn bộ nhớ/số học.",
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "text": "Hệ thống chỉ được phép chuyển sang trạng thái giao hàng (shipped) khi đơn hàng đã có bằng chứng thu tiền thành công hợp lệ (paid/trusted)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-2",
+      "text": "Hệ thống không được rơi vào deadlock khi gặp sự cố timeout từ cổng thanh toán; phải có cơ chế đối soát hoặc thử lại",
+      "category": "liveness",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-3",
+      "text": "Trạng thái 'processing' (đang chờ xử lý) và 'paid' (đã thu tiền) không được đồng thời xảy ra trên cùng một trạng thái",
+      "category": "safety",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "REQ-4",
+      "text": "Hàm phân tích chữ ký Webhook từ cổng thanh toán (parse_webhook_signature) không được gây tràn bộ đệm (Buffer Overflow)",
+      "category": "memory",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-5",
+      "text": "Hàm dọn dẹp phiên thanh toán (cleanup_payment_session) không được giải phóng cùng một con trỏ nhiều hơn 1 lần (Double Free)",
+      "category": "memory",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-6",
+      "text": "Tổng số tiền thanh toán (tiền hàng + phí vận chuyển) không được vượt quá miền biểu diễn số nguyên 32-bit (Integer Overflow)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-7",
+      "text": "Hàm tính toán tỷ lệ thanh toán/hoàn tiền không được gây lỗi chia cho 0 khi tổng số tiền đơn hàng bằng 0",
+      "category": "functional",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "REQ-8",
+      "text": "Không được tồn tại mã bí mật backdoor để bypass xác thực webhook từ cổng thanh toán",
+      "category": "safety",
+      "priority": "HIGH"
+    }
+  ],
+  "state_machine": {
+    "states": [
+      "CREATED",
+      "PENDING",
+      "UNKNOWN",
+      "SUCCEEDED",
+      "FAILED",
+      "SHIPPED"
+    ],
+    "initial": [
+      "CREATED"
+    ],
+    "labeling": {
+      "CREATED": [
+        "initial"
+      ],
+      "PENDING": [
+        "processing"
+      ],
+      "UNKNOWN": [
+        "timeout"
+      ],
+      "SUCCEEDED": [
+        "paid",
+        "trusted"
+      ],
+      "FAILED": [
+        "failed"
+      ],
+      "SHIPPED": [
+        "shipped",
+        "trusted"
+      ]
+    },
+    "transitions": [
+      [
+        "CREATED",
+        "PENDING"
+      ],
+      [
+        "PENDING",
+        "UNKNOWN"
+      ],
+      [
+        "PENDING",
+        "SUCCEEDED"
+      ],
+      [
+        "UNKNOWN",
+        "SUCCEEDED"
+      ],
+      [
+        "PENDING",
+        "FAILED"
+      ],
+      [
+        "UNKNOWN",
+        "FAILED"
+      ],
+      [
+        "FAILED",
+        "PENDING"
+      ],
+      [
+        "SUCCEEDED",
+        "SHIPPED"
+      ],
+      [
+        "SHIPPED",
+        "CREATED"
+      ],
+      [
+        "FAILED",
+        "CREATED"
+      ]
+    ]
+  },
+  "additional_flows": {
+    "Luồng 1: Chu trình thanh toán thành công chuẩn": {
+      "states": [
+        "CREATED",
+        "PENDING",
+        "SUCCEEDED",
+        "SHIPPED"
+      ],
+      "initial": [
+        "CREATED"
+      ],
+      "labeling": {
+        "CREATED": [
+          "initial"
+        ],
+        "PENDING": [
+          "processing"
+        ],
+        "SUCCEEDED": [
+          "paid",
+          "trusted"
+        ],
+        "SHIPPED": [
+          "shipped",
+          "trusted"
+        ]
+      },
+      "transitions": [
+        [
+          "CREATED",
+          "PENDING"
+        ],
+        [
+          "PENDING",
+          "SUCCEEDED"
+        ],
+        [
+          "SUCCEEDED",
+          "SHIPPED"
+        ],
+        [
+          "SHIPPED",
+          "CREATED"
+        ]
+      ]
+    },
+    "Luồng 2: Xử lý Timeout và Đối soát cổng thanh toán": {
+      "states": [
+        "PENDING",
+        "UNKNOWN",
+        "SUCCEEDED",
+        "FAILED"
+      ],
+      "initial": [
+        "PENDING"
+      ],
+      "labeling": {
+        "PENDING": [
+          "processing"
+        ],
+        "UNKNOWN": [
+          "timeout"
+        ],
+        "SUCCEEDED": [
+          "paid",
+          "trusted"
+        ],
+        "FAILED": [
+          "failed"
+        ]
+      },
+      "transitions": [
+        [
+          "PENDING",
+          "UNKNOWN"
+        ],
+        [
+          "UNKNOWN",
+          "SUCCEEDED"
+        ],
+        [
+          "UNKNOWN",
+          "FAILED"
+        ],
+        [
+          "SUCCEEDED",
+          "PENDING"
+        ],
+        [
+          "FAILED",
+          "PENDING"
+        ]
+      ]
+    }
+  },
+  "safety_properties": [
+    "EF(paid)",
+    "EF(shipped)"
+  ],
+  "mutual_exclusion": {
+    "atom1": "processing",
+    "atom2": "paid"
+  },
+  "functions": [
+    {
+      "name": "parse_webhook_signature",
+      "language": "c",
+      "kind": "buffer_copy",
+      "params": [
+        "raw_signature"
+      ],
+      "buffer_size": 32,
+      "bug": "buffer-overflow"
+    },
+    {
+      "name": "cleanup_payment_session",
+      "language": "c",
+      "kind": "alloc_release",
+      "params": [],
+      "buffer_size": 16,
+      "bug": "double-free"
+    },
+    {
+      "name": "calculate_total_payment",
+      "language": "c",
+      "kind": "arithmetic",
+      "params": [
+        "amount",
+        "shipping_fee"
+      ],
+      "bug": null
+    },
+    {
+      "name": "refund_ratio",
+      "language": "python",
+      "kind": "divide",
+      "params": [
+        "refund_amount",
+        "total_amount"
+      ]
+    },
+    {
+      "name": "webhook_bypass_token",
+      "language": "python",
+      "kind": "magic_value",
+      "params": [
+        "header_token",
+        "secret_token"
+      ],
+      "magic_values": [
+        7788,
+        9999
+      ]
+    }
+  ],
+  "arithmetic_checks": [
+    {
+      "name": "payment_amount_overflow",
+      "int_vars": [
+        "amount",
+        "shipping_fee"
+      ],
+      "condition": "amount > 0 and shipping_fee > 0 and amount > 2000000000",
+      "overflow_expr": "amount + shipping_fee"
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "requirement_ids": [
+        "REQ-1"
+      ],
+      "title": "Thanh toan thanh cong va chuyen sang giao hang",
+      "preconditions": "Don hang o trang thai CREATED, tong tien hop le",
+      "steps": [
+        "Nguoi dung xac nhan thanh toan don hang",
+        "Cong thanh toan tra ve webhook hop le",
+        "He thong cap nhat trang thai SUCCEEDED va cho phep SHIPPED"
+      ],
+      "expected_result": "Don hang chuyen trang thai SHIPPED thanh cong",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-2",
+      "requirement_ids": [
+        "REQ-2"
+      ],
+      "title": "Xu ly Timeout khong gay Deadlock",
+      "preconditions": "Don hang o trang thai PENDING",
+      "steps": [
+        "Mat ket noi voi cong thanh toan -> Chuyen sang UNKNOWN",
+        "Chay tien trinh doi soat tu dong"
+      ],
+      "expected_result": "He thong thoat khoi UNKNOWN sang SUCCEEDED hoac FAILED, khong bi treo",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-3",
+      "requirement_ids": [
+        "REQ-4"
+      ],
+      "title": "Kiem tra bao mat ham parse webhook signature",
+      "preconditions": "Payload chu ky webhook tu doi tuong gia mao dai hon 32 bytes",
+      "steps": [
+        "Goi ham parse_webhook_signature voi chuoi 64 ky tu"
+      ],
+      "expected_result": "Ham an toan phai cat bo chuoi dung 31 ky tu va khong lam tran stack",
+      "priority": "HIGH"
+    }
+  ]
+}

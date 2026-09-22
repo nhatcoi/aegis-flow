@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+frontend/dist/
+data/
+*.log
+*.tsbuildinfo
+*.exe
+*.zip
+*.pyc
+.DS_Store
