@@ -1,4 +1,4 @@
-"""Modern Desktop Application GUI for Spec Verification Lab using PyQt6 and qdarktheme."""
+"""Modern Desktop Application GUI for Spec Verification Lab (Redesigned Ergonomic Studio Layout)."""
 from __future__ import annotations
 
 import sys
@@ -6,7 +6,7 @@ from pathlib import Path
 import qdarktheme
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QIcon, QColor, QKeySequence, QShortcut
+from PyQt6.QtGui import QFont, QColor
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QListWidget,
+    QListWidgetItem,
     QTextEdit,
     QComboBox,
     QTabWidget,
@@ -26,7 +27,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QFileDialog,
     QMessageBox,
-    QToolBar,
     QStatusBar,
     QFrame,
 )
@@ -45,16 +45,16 @@ from core.spec_loader import Specification, load_specification
 class ModernSpecVerificationLab(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Spec Verification Lab — Đặc tả → Kripke → Sinh mã → CWE/CVE")
-        self.resize(1360, 900)
-        self.setMinimumSize(1080, 720)
+        self.setWindowTitle("Payment Security Verification Lab — Formal Methods & Vulnerability Analysis")
+        self.resize(1400, 920)
+        self.setMinimumSize(1100, 750)
 
         # Base paths
         self.base_dir = Path(__file__).resolve().parent.parent
         self.specs_json_dir = self.base_dir / "dataset" / "specs"
         self.specs_excel_dir = self.base_dir / "dataset" / "specs_excel"
 
-        # State
+        # Application state
         self.current_spec: Specification | None = None
         self.kripke_report: KripkeCheckReport | None = None
         self.generated_functions: list[GeneratedFunction] = []
@@ -67,114 +67,147 @@ class ModernSpecVerificationLab(QMainWindow):
         self._load_initial_spec()
 
     def _init_ui(self):
-        # Central widget and root layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         root_layout = QVBoxLayout(central_widget)
-        root_layout.setContentsMargins(8, 8, 8, 8)
-        root_layout.setSpacing(6)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+        root_layout.setSpacing(8)
 
-        # Top Bar (Header & Actions)
-        top_bar = self._create_top_bar()
+        # 1. Top Command Center Bar (Header + Pipeline Actions + Quick Select)
+        top_bar = self._create_command_center()
         root_layout.addWidget(top_bar)
 
-        # Main Splitter (Left Sidebar vs Right Notebook)
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        root_layout.addWidget(self.main_splitter, stretch=1)
+        # 2. Main Horizontal Splitter (Left Explorer vs Right Workspace)
+        self.main_h_splitter = QSplitter(Qt.Orientation.Horizontal)
+        root_layout.addWidget(self.main_h_splitter, stretch=1)
 
-        # Left Sidebar (Width ~ 380px)
-        sidebar = self._create_sidebar()
-        self.main_splitter.addWidget(sidebar)
+        # Left Panel (Spec Explorer & Requirements Card)
+        left_panel = self._create_left_explorer()
+        self.main_h_splitter.addWidget(left_panel)
 
-        # Right Content (Tab Notebook)
-        content_tabs = self._create_content_tabs()
-        self.main_splitter.addWidget(content_tabs)
+        # Right Panel (Work Area + Bottom Output Console Dock)
+        right_panel = self._create_right_workspace()
+        self.main_h_splitter.addWidget(right_panel)
 
-        # Set initial splitter proportions
-        self.main_splitter.setSizes([380, 980])
+        # Set ratio: 320px left, remaining right
+        self.main_h_splitter.setSizes([320, 1080])
 
-        # Status Bar
+        # 3. Modern Status Bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Sẵn sàng. Vui lòng chọn đặc tả và thực thi Pipeline.")
+        self.status_bar.showMessage("Sẵn sàng. Đặc tả mặc định: payment_ecommerce.")
 
-    def _create_top_bar(self) -> QWidget:
+    # =========================================================================
+    # 1. TOP COMMAND CENTER (Header, Quick Spec Selector, Pipeline Controls)
+    # =========================================================================
+    def _create_command_center(self) -> QWidget:
         bar = QFrame()
         bar.setFrameShape(QFrame.Shape.StyledPanel)
-        bar.setStyleSheet("QFrame { background-color: rgba(255, 255, 255, 0.05); border-radius: 8px; padding: 4px; }")
+        bar.setStyleSheet(
+            "QFrame { background-color: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 4px; }"
+        )
         layout = QHBoxLayout(bar)
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(10)
 
-        title_lbl = QLabel("🛡️ SPEC VERIFICATION LAB — AN TOÀN PHẦN MỀM (SOFTWARE SECURITY)")
-        title_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #4fc3f7;")
-        layout.addWidget(title_lbl)
+        # Brand / Title
+        brand_lbl = QLabel("🛡️ PAYMENT SECURITY LAB")
+        brand_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #4fc3f7; letter-spacing: 0.5px;")
+        layout.addWidget(brand_lbl)
+
+        # Separator line
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.VLine)
+        sep1.setStyleSheet("color: rgba(255, 255, 255, 0.2);")
+        layout.addWidget(sep1)
+
+        # Quick Spec Switcher
+        layout.addWidget(QLabel("Đặc tả hiện tại:"))
+        self.cbo_quick_spec = QComboBox()
+        self.cbo_quick_spec.setMinimumWidth(260)
+        self.cbo_quick_spec.setStyleSheet("QComboBox { font-weight: bold; padding: 4px 8px; }")
+        self.cbo_quick_spec.currentIndexChanged.connect(self._on_quick_spec_changed)
+        layout.addWidget(self.cbo_quick_spec)
+
+        btn_browse = QPushButton("📂 Duyệt file...")
+        btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_browse.clicked.connect(self._browse_file)
+        layout.addWidget(btn_browse)
 
         layout.addStretch()
 
-        # Theme toggle button
-        self.btn_theme = QPushButton("☀️ Giao diện Sáng/Tối")
+        # Pipeline Action Buttons
+        self.btn_ch1 = QPushButton("1️⃣ Kripke (Ch1)")
+        self.btn_ch1.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ch1.setStyleSheet("background-color: #0288d1; color: white; font-weight: bold; padding: 6px 12px; border-radius: 5px;")
+        self.btn_ch1.clicked.connect(self._run_ch1)
+        layout.addWidget(self.btn_ch1)
+
+        self.btn_ch2 = QPushButton("2️⃣ Sinh mã (Ch2)")
+        self.btn_ch2.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ch2.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 6px 12px; border-radius: 5px;")
+        self.btn_ch2.clicked.connect(self._run_ch2)
+        layout.addWidget(self.btn_ch2)
+
+        self.btn_full = QPushButton("🚀 CHẠY TOÀN BỘ PIPELINE")
+        self.btn_full.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_full.setStyleSheet(
+            "background-color: #e65100; color: white; font-size: 12px; font-weight: bold; padding: 7px 16px; border-radius: 6px;"
+        )
+        self.btn_full.clicked.connect(self._run_full_pipeline)
+        layout.addWidget(self.btn_full)
+
+        self.btn_export = QPushButton("📑 Xuất Báo cáo")
+        self.btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_export.setStyleSheet("background-color: #6a1b9a; color: white; font-weight: bold; padding: 6px 12px; border-radius: 5px;")
+        self.btn_export.clicked.connect(self._export_report_dialog)
+        layout.addWidget(self.btn_export)
+
+        # Theme toggle
+        self.btn_theme = QPushButton("☀️ Sáng/Tối")
         self.btn_theme.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_theme.clicked.connect(self._toggle_theme)
         layout.addWidget(self.btn_theme)
 
-        # Quick file open
-        btn_open = QPushButton("📂 Mở file...")
-        btn_open.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_open.clicked.connect(self._browse_file)
-        layout.addWidget(btn_open)
-
         return bar
 
-    def _create_sidebar(self) -> QWidget:
+    # =========================================================================
+    # 2. LEFT PANEL: Spec Explorer & Requirements Card
+    # =========================================================================
+    def _create_left_explorer(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(8)
 
-        # 1. JSON Specs Box
-        grp_json = QGroupBox("📁 Bộ đặc tả mẫu JSON (dataset/specs):")
-        grp_json_layout = QVBoxLayout(grp_json)
-        grp_json_layout.setContentsMargins(6, 6, 6, 6)
+        # Project Specs Explorer
+        grp_explorer = QGroupBox("📁 Quản lý Đặc tả (Project Specs):")
+        grp_explorer_layout = QVBoxLayout(grp_explorer)
+        grp_explorer_layout.setContentsMargins(6, 6, 6, 6)
 
-        self.list_json = QListWidget()
-        self.list_json.setStyleSheet("QListWidget { font-size: 11px; }")
-        self.list_json.itemDoubleClicked.connect(self._on_json_selected)
-        if self.specs_json_dir.exists():
-            pay_f = sorted(self.specs_json_dir.glob("payment*.json"))
-            oth_f = sorted(f for f in self.specs_json_dir.glob("*.json") if not f.name.startswith("payment"))
-            for f in pay_f + oth_f:
-                self.list_json.addItem(f.name)
+        # Filter Tabs (Tất cả / Payment / Khác)
+        self.tabs_spec_type = QTabWidget()
+        self.tabs_spec_type.setStyleSheet("QTabBar::tab { padding: 4px 8px; font-size: 11px; }")
 
-        grp_json_layout.addWidget(self.list_json)
-        btn_load_json = QPushButton("Nạp đặc tả JSON đã chọn")
-        btn_load_json.setStyleSheet("font-weight: bold;")
-        btn_load_json.clicked.connect(self._on_json_selected)
-        grp_json_layout.addWidget(btn_load_json)
-        layout.addWidget(grp_json)
+        # Tab: JSON
+        self.list_specs = QListWidget()
+        self.list_specs.setStyleSheet("QListWidget { font-size: 11px; }")
+        self.list_specs.itemClicked.connect(self._on_spec_list_clicked)
+        self.tabs_spec_type.addTab(self.list_specs, "JSON Specs")
 
-        # 2. Excel Specs Box
-        grp_excel = QGroupBox("📊 Bộ đặc tả mẫu Excel (dataset/specs_excel):")
-        grp_excel_layout = QVBoxLayout(grp_excel)
-        grp_excel_layout.setContentsMargins(6, 6, 6, 6)
+        # Tab: Excel
+        self.list_excel_specs = QListWidget()
+        self.list_excel_specs.setStyleSheet("QListWidget { font-size: 11px; }")
+        self.list_excel_specs.itemClicked.connect(self._on_excel_list_clicked)
+        self.tabs_spec_type.addTab(self.list_excel_specs, "Excel Specs (.xlsx)")
 
-        self.list_excel = QListWidget()
-        self.list_excel.setMaximumHeight(85)
-        self.list_excel.setStyleSheet("QListWidget { font-size: 11px; }")
-        self.list_excel.itemDoubleClicked.connect(self._on_excel_selected)
-        if self.specs_excel_dir.exists():
-            pay_fx = sorted(self.specs_excel_dir.glob("payment*.xlsx"))
-            oth_fx = sorted(f for f in self.specs_excel_dir.glob("*.xlsx") if not f.name.startswith("payment"))
-            for f in pay_fx + oth_fx:
-                self.list_excel.addItem(f.name)
+        grp_explorer_layout.addWidget(self.tabs_spec_type)
+        layout.addWidget(grp_explorer, stretch=1)
 
-        grp_excel_layout.addWidget(self.list_excel)
-        btn_load_excel = QPushButton("Nạp đặc tả Excel đã chọn")
-        btn_load_excel.clicked.connect(self._on_excel_selected)
-        grp_excel_layout.addWidget(btn_load_excel)
-        layout.addWidget(grp_excel)
+        self._populate_spec_lists()
 
-        # 3. Requirements box
-        grp_req = QGroupBox("📋 Yêu cầu an toàn (Requirements):")
+        # Requirements Card (Bottom Left)
+        grp_req = QGroupBox("📋 Thông tin & Yêu cầu an toàn:")
         grp_req_layout = QVBoxLayout(grp_req)
         grp_req_layout.setContentsMargins(6, 6, 6, 6)
 
@@ -182,124 +215,137 @@ class ModernSpecVerificationLab(QMainWindow):
         self.txt_requirements.setReadOnly(True)
         self.txt_requirements.setStyleSheet("font-family: 'DejaVu Sans', sans-serif; font-size: 11px;")
         grp_req_layout.addWidget(self.txt_requirements)
-        layout.addWidget(grp_req, stretch=1)
+        layout.addWidget(grp_req, stretch=2)
 
-        # 4. Pipeline Action Buttons
-        grp_actions = QGroupBox("⚡ Quy trình thực thi (Pipeline):")
-        grp_actions_layout = QVBoxLayout(grp_actions)
-        grp_actions_layout.setSpacing(6)
-
-        self.btn_ch1 = QPushButton("1) Sinh Kripke + Kiểm chứng (Ch1)")
-        self.btn_ch1.setStyleSheet("background-color: #1976d2; color: white; font-weight: bold; padding: 7px; border-radius: 4px;")
-        self.btn_ch1.clicked.connect(self._run_ch1)
-        grp_actions_layout.addWidget(self.btn_ch1)
-
-        self.btn_ch2 = QPushButton("2) Sinh mã C/Python từ đặc tả (Ch2)")
-        self.btn_ch2.setStyleSheet("background-color: #388e3c; color: white; font-weight: bold; padding: 7px; border-radius: 4px;")
-        self.btn_ch2.clicked.connect(self._run_ch2)
-        grp_actions_layout.addWidget(self.btn_ch2)
-
-        self.btn_full = QPushButton("🚀 3) Chạy TOÀN BỘ Pipeline (Ch1-4)")
-        self.btn_full.setStyleSheet(
-            "background-color: #f57c00; color: white; font-size: 13px; font-weight: bold; padding: 10px; border-radius: 6px;"
-        )
-        self.btn_full.clicked.connect(self._run_full_pipeline)
-        grp_actions_layout.addWidget(self.btn_full)
-
-        self.btn_export = QPushButton("📑 Xuất Báo cáo Tích hợp (.md/.html)")
-        self.btn_export.setStyleSheet("background-color: #7b1fa2; color: white; font-weight: bold; padding: 7px; border-radius: 4px;")
-        self.btn_export.clicked.connect(self._export_report_dialog)
-        grp_actions_layout.addWidget(self.btn_export)
-
-        layout.addWidget(grp_actions)
         return widget
 
-    def _create_content_tabs(self) -> QWidget:
-        self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("QTabBar::tab { font-weight: bold; padding: 8px 16px; }")
+    def _populate_spec_lists(self):
+        self.list_specs.clear()
+        self.cbo_quick_spec.blockSignals(True)
+        self.cbo_quick_spec.clear()
 
-        # Tab 1: Kripke & Graph
-        tab_kripke = self._create_tab_kripke()
-        self.tabs.addTab(tab_kripke, "🌐 1. Kripke & Kiểm chứng")
+        # Populate JSON specs
+        if self.specs_json_dir.exists():
+            pay_files = sorted(self.specs_json_dir.glob("payment*.json"))
+            other_files = sorted(f for f in self.specs_json_dir.glob("*.json") if not f.name.startswith("payment"))
+            for f in pay_files:
+                icon_text = "💳 " if "flawed" not in f.name else "⚠️ "
+                item = QListWidgetItem(f"{icon_text}{f.name}")
+                item.setData(Qt.ItemDataRole.UserRole, str(f))
+                self.list_specs.addItem(item)
+                self.cbo_quick_spec.addItem(f"{icon_text}{f.name}", str(f))
 
-        # Tab 2: Codegen
-        tab_code = self._create_tab_codegen()
-        self.tabs.addTab(tab_code, "💻 2. Mã nguồn sinh ra")
+            for f in other_files:
+                item = QListWidgetItem(f"📄 {f.name}")
+                item.setData(Qt.ItemDataRole.UserRole, str(f))
+                self.list_specs.addItem(item)
+                self.cbo_quick_spec.addItem(f"📄 {f.name}", str(f))
 
-        # Tab 3: Z3 SMT
-        tab_smt = self._create_tab_smt()
-        self.tabs.addTab(tab_smt, "🔢 3. Kiểm tra số học (Z3)")
+        # Populate Excel specs
+        self.list_excel_specs.clear()
+        if self.specs_excel_dir.exists():
+            pay_excel = sorted(self.specs_excel_dir.glob("payment*.xlsx"))
+            other_excel = sorted(f for f in self.specs_excel_dir.glob("*.xlsx") if not f.name.startswith("payment"))
+            for f in pay_excel + other_excel:
+                item = QListWidgetItem(f"📊 {f.name}")
+                item.setData(Qt.ItemDataRole.UserRole, str(f))
+                self.list_excel_specs.addItem(item)
 
-        # Tab 4: CWE/CVE
-        tab_cwe = self._create_tab_cwe()
-        self.tabs.addTab(tab_cwe, "🛡️ 4. Phân tích CWE/CVE")
+        self.cbo_quick_spec.blockSignals(False)
 
-        # Tab 5: Report
-        tab_report = self._create_tab_report()
-        self.tabs.addTab(tab_report, "📄 5. Báo cáo Tích hợp")
+    # =========================================================================
+    # 3. RIGHT PANEL: Work Area + Bottom Output Console Dock
+    # =========================================================================
+    def _create_right_workspace(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(6)
 
-        return self.tabs
+        # Vertical Splitter (Upper Work Area vs Lower Console Dock)
+        self.work_splitter = QSplitter(Qt.Orientation.Vertical)
+        layout.addWidget(self.work_splitter, stretch=1)
 
-    # ------------------ Tab 1: Kripke ------------------
-    def _create_tab_kripke(self) -> QWidget:
+        # Upper Area: Main Tabs (Kripke Canvas / Code Inspector / CWE Audit / Report)
+        upper_tabs = self._create_upper_tabs()
+        self.work_splitter.addWidget(upper_tabs)
+
+        # Lower Area: Output Console Dock (Model Checking Log & SMT Solver Output)
+        lower_dock = self._create_lower_console_dock()
+        self.work_splitter.addWidget(lower_dock)
+
+        # Set ratio: 65% upper, 35% lower dock
+        self.work_splitter.setSizes([550, 270])
+
+        return widget
+
+    def _create_upper_tabs(self) -> QWidget:
+        self.upper_tabs = QTabWidget()
+        self.upper_tabs.setStyleSheet("QTabBar::tab { font-weight: bold; padding: 7px 16px; font-size: 11px; }")
+
+        # Tab 1: Kripke State Canvas
+        tab_kripke = self._create_tab_kripke_canvas()
+        self.upper_tabs.addTab(tab_kripke, "🌐 Sơ đồ Trạng thái Kripke")
+
+        # Tab 2: Code Inspector (Side-by-side)
+        tab_code = self._create_tab_code_inspector()
+        self.upper_tabs.addTab(tab_code, "💻 Trình duyệt Mã nguồn C / Python")
+
+        # Tab 3: Security & CWE Audit
+        tab_cwe = self._create_tab_cwe_audit()
+        self.upper_tabs.addTab(tab_cwe, "🛡️ Bảng phân tích Lỗ hổng & CWE/CVE")
+
+        # Tab 4: Full Integrated Report
+        tab_report = self._create_tab_full_report()
+        self.upper_tabs.addTab(tab_report, "📄 Toàn văn Báo cáo")
+
+        return self.upper_tabs
+
+    # ------------------ Tab 1: Kripke Canvas (Full Space) ------------------
+    def _create_tab_kripke_canvas(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        layout.addWidget(splitter)
-
-        # Log Top
-        top_frame = QGroupBox("Kết quả kiểm chứng hình thức (Model Checking Log):")
-        top_layout = QVBoxLayout(top_frame)
-        self.txt_kripke_log = QTextEdit()
-        self.txt_kripke_log.setReadOnly(True)
-        self.txt_kripke_log.setStyleSheet(
-            "background-color: #1e1e1e; color: #d4d4d4; font-family: 'DejaVu Sans Mono', monospace; font-size: 11px;"
-        )
-        top_layout.addWidget(self.txt_kripke_log)
-        splitter.addWidget(top_frame)
-
-        # Graph Bottom
-        bottom_frame = QGroupBox("Sơ đồ chuyển trạng thái Kripke:")
-        bottom_layout = QVBoxLayout(bottom_frame)
-
-        # Selector bar
+        # Flow Selector Toolbar
         bar = QHBoxLayout()
-        bar.addWidget(QLabel("Chọn luồng trạng thái hiển thị:"))
+        bar.addWidget(QLabel("<b>Luồng trạng thái:</b>"))
         self.cbo_flows = QComboBox()
-        self.cbo_flows.setMinimumWidth(300)
+        self.cbo_flows.setMinimumWidth(320)
         self.cbo_flows.currentIndexChanged.connect(self._on_flow_selected)
         bar.addWidget(self.cbo_flows)
+
         bar.addStretch()
-        bottom_layout.addLayout(bar)
+        self.lbl_graph_info = QLabel("Khởi tạo: CREATED | 6 Trạng thái | 10 Chuyển tiếp")
+        self.lbl_graph_info.setStyleSheet("color: #4fc3f7; font-weight: bold;")
+        bar.addWidget(self.lbl_graph_info)
+        layout.addLayout(bar)
 
-        # Canvas
-        self.figure = Figure(figsize=(7, 4.5), dpi=100)
+        # Canvas with embedded Navigation Toolbar
+        self.figure = Figure(figsize=(8, 5), dpi=100)
         self.canvas = FigureCanvasQTAgg(self.figure)
-        self.toolbar = NavigationToolbar2QT(self.canvas, bottom_frame)
-        bottom_layout.addWidget(self.toolbar)
-        bottom_layout.addWidget(self.canvas, stretch=1)
+        self.toolbar = NavigationToolbar2QT(self.canvas, widget)
+        layout.addWidget(self.toolbar)
+        layout.addWidget(self.canvas, stretch=1)
 
-        splitter.addWidget(bottom_frame)
-        splitter.setSizes([260, 500])
         return widget
 
-    # ------------------ Tab 2: Codegen ------------------
-    def _create_tab_codegen(self) -> QWidget:
+    # ------------------ Tab 2: Code Inspector (Side-by-side) ---------------
+    def _create_tab_code_inspector(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(6, 6, 6, 6)
 
         top_bar = QHBoxLayout()
-        top_bar.addWidget(QLabel("Chọn hàm cần xem:"))
+        top_bar.addWidget(QLabel("<b>Hàm được phân tích:</b>"))
         self.cbo_funcs = QComboBox()
         self.cbo_funcs.setMinimumWidth(280)
         self.cbo_funcs.currentIndexChanged.connect(self._on_func_selected)
         top_bar.addWidget(self.cbo_funcs)
 
         top_bar.addStretch()
-        btn_copy = QPushButton("📋 Sao chép mã an toàn")
+        btn_copy = QPushButton("📋 Sao chép Mã an toàn")
+        btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_copy.clicked.connect(self._copy_safe_code)
         top_bar.addWidget(btn_copy)
         layout.addLayout(top_bar)
@@ -307,8 +353,8 @@ class ModernSpecVerificationLab(QMainWindow):
         code_splitter = QSplitter(Qt.Orientation.Horizontal)
         layout.addWidget(code_splitter, stretch=1)
 
-        # Vulnerable
-        box_vuln = QGroupBox("⚠️ Mã nguồn minh họa LỖ HỔNG (Vulnerable Code):")
+        # Left: Vulnerable
+        box_vuln = QGroupBox("⚠️ Mã nguồn ban đầu minh họa LỖ HỔNG (Vulnerable Code):")
         box_vuln_layout = QVBoxLayout(box_vuln)
         self.txt_code_vuln = QTextEdit()
         self.txt_code_vuln.setReadOnly(True)
@@ -318,7 +364,7 @@ class ModernSpecVerificationLab(QMainWindow):
         box_vuln_layout.addWidget(self.txt_code_vuln)
         code_splitter.addWidget(box_vuln)
 
-        # Safe
+        # Right: Safe
         box_safe = QGroupBox("✅ Mã nguồn đã VÁ AN TOÀN (Hardened / Secure Code):")
         box_safe_layout = QVBoxLayout(box_safe)
         self.txt_code_safe = QTextEdit()
@@ -332,26 +378,8 @@ class ModernSpecVerificationLab(QMainWindow):
         code_splitter.setSizes([500, 500])
         return widget
 
-    # ------------------ Tab 3: SMT ------------------
-    def _create_tab_smt(self) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(6, 6, 6, 6)
-
-        grp = QGroupBox("Kết quả phân tích điều kiện & Tràn số nguyên 32-bit (Z3 SMT Solver):")
-        grp_layout = QVBoxLayout(grp)
-
-        self.txt_smt = QTextEdit()
-        self.txt_smt.setReadOnly(True)
-        self.txt_smt.setStyleSheet(
-            "background-color: #1e1e1e; color: #d4d4d4; font-family: 'DejaVu Sans Mono', monospace; font-size: 12px; line-height: 1.5;"
-        )
-        grp_layout.addWidget(self.txt_smt)
-        layout.addWidget(grp)
-        return widget
-
-    # ------------------ Tab 4: CWE/CVE ------------------
-    def _create_tab_cwe(self) -> QWidget:
+    # ------------------ Tab 3: Security & CWE Audit -----------------------
+    def _create_tab_cwe_audit(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -382,18 +410,20 @@ class ModernSpecVerificationLab(QMainWindow):
 
         return widget
 
-    # ------------------ Tab 5: Report ------------------
-    def _create_tab_report(self) -> QWidget:
+    # ------------------ Tab 4: Full Integrated Report ----------------------
+    def _create_tab_full_report(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(6, 6, 6, 6)
 
         bar = QHBoxLayout()
-        btn_save = QPushButton("💾 Lưu báo cáo ra file...")
+        btn_save = QPushButton("💾 Lưu báo cáo (.md)...")
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._export_report_dialog)
         bar.addWidget(btn_save)
 
-        btn_refresh = QPushButton("🔄 Làm mới báo cáo")
+        btn_refresh = QPushButton("🔄 Cập nhật báo cáo")
+        btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_refresh.clicked.connect(self._refresh_report_view)
         bar.addWidget(btn_refresh)
         bar.addStretch()
@@ -405,29 +435,49 @@ class ModernSpecVerificationLab(QMainWindow):
         layout.addWidget(self.txt_report, stretch=1)
         return widget
 
-    # ------------------ Theme Toggle ------------------
-    def _toggle_theme(self):
-        self.is_dark_theme = not self.is_dark_theme
-        theme = "dark" if self.is_dark_theme else "light"
-        qdarktheme.setup_theme(theme)
-        # Re-render figure to match background
-        if self.current_kripke_model:
-            facecolor = "#202124" if self.is_dark_theme else "#ffffff"
-            self.figure.patch.set_facecolor(facecolor)
-            self.current_kripke_model.draw_to_figure(self.figure)
-            self.canvas.draw()
+    # =========================================================================
+    # 4. LOWER AREA: Output Console Dock (VS Code / IDE Terminal Style)
+    # =========================================================================
+    def _create_lower_console_dock(self) -> QWidget:
+        box = QGroupBox("🖥️ Bảng điều khiển Kết quả (Verification Console Dock):")
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(4, 4, 4, 4)
 
-    # ------------------ Loading Logic ------------------
+        self.console_tabs = QTabWidget()
+        self.console_tabs.setStyleSheet("QTabBar::tab { font-size: 11px; padding: 4px 12px; }")
+
+        # Tab 1: Kripke Model Checking Output
+        self.txt_kripke_log = QTextEdit()
+        self.txt_kripke_log.setReadOnly(True)
+        self.txt_kripke_log.setStyleSheet(
+            "background-color: #1e1e1e; color: #d4d4d4; font-family: 'DejaVu Sans Mono', monospace; font-size: 11px; line-height: 1.4;"
+        )
+        self.console_tabs.addTab(self.txt_kripke_log, "📊 Kết quả Model Checking & CTL")
+
+        # Tab 2: SMT Z3 Solver Output
+        self.txt_smt = QTextEdit()
+        self.txt_smt.setReadOnly(True)
+        self.txt_smt.setStyleSheet(
+            "background-color: #1e1e1e; color: #d4d4d4; font-family: 'DejaVu Sans Mono', monospace; font-size: 11px; line-height: 1.4;"
+        )
+        self.console_tabs.addTab(self.txt_smt, "🔢 Phân tích SMT Z3 (Integer Overflow)")
+
+        layout.addWidget(self.console_tabs)
+        return box
+
+    # =========================================================================
+    # EVENT HANDLERS & LOGIC
+    # =========================================================================
     def _load_initial_spec(self):
         default_file = self.specs_json_dir / "payment_ecommerce_spec.json"
         if not default_file.exists():
             default_file = self.specs_json_dir / "auth_rate_limit_spec.json"
         if default_file.exists():
             self._load_file(default_file)
-            # Select in listbox
-            for i in range(self.list_json.count()):
-                if self.list_json.item(i).text() == default_file.name:
-                    self.list_json.setCurrentRow(i)
+            # Sync dropdown and list selection
+            for i in range(self.cbo_quick_spec.count()):
+                if self.cbo_quick_spec.itemData(i) == str(default_file):
+                    self.cbo_quick_spec.setCurrentIndex(i)
                     break
 
     def _browse_file(self):
@@ -437,17 +487,27 @@ class ModernSpecVerificationLab(QMainWindow):
         if path:
             self._load_file(Path(path))
 
-    def _on_json_selected(self):
-        item = self.list_json.currentItem()
-        if not item:
-            return
-        self._load_file(self.specs_json_dir / item.text())
+    def _on_quick_spec_changed(self):
+        filepath = self.cbo_quick_spec.currentData()
+        if filepath and Path(filepath).exists():
+            self._load_file(Path(filepath))
 
-    def _on_excel_selected(self):
-        item = self.list_excel.currentItem()
-        if not item:
-            return
-        self._load_file(self.specs_excel_dir / item.text())
+    def _on_spec_list_clicked(self, item: QListWidgetItem):
+        filepath = item.data(Qt.ItemDataRole.UserRole)
+        if filepath and Path(filepath).exists():
+            self._load_file(Path(filepath))
+            # Sync dropdown
+            for i in range(self.cbo_quick_spec.count()):
+                if self.cbo_quick_spec.itemData(i) == filepath:
+                    self.cbo_quick_spec.blockSignals(True)
+                    self.cbo_quick_spec.setCurrentIndex(i)
+                    self.cbo_quick_spec.blockSignals(False)
+                    break
+
+    def _on_excel_list_clicked(self, item: QListWidgetItem):
+        filepath = item.data(Qt.ItemDataRole.UserRole)
+        if filepath and Path(filepath).exists():
+            self._load_file(Path(filepath))
 
     def _load_file(self, filepath: Path):
         try:
@@ -481,6 +541,11 @@ class ModernSpecVerificationLab(QMainWindow):
 
             # Render initial diagram
             if self.current_spec.state_machine:
+                num_st = len(self.current_spec.state_machine.states)
+                num_tr = len(self.current_spec.state_machine.transitions)
+                self.lbl_graph_info.setText(
+                    f"Khởi tạo: {', '.join(self.current_spec.state_machine.initial)} | {num_st} Trạng thái | {num_tr} Chuyển tiếp"
+                )
                 self.current_kripke_model = KripkeStructure.from_state_machine(
                     self.current_spec.state_machine, self.current_spec.name
                 )
@@ -492,8 +557,8 @@ class ModernSpecVerificationLab(QMainWindow):
                 f"- Số trạng thái: {len(self.current_spec.state_machine.states) if self.current_spec.state_machine else 0}\n"
                 f"- Số yêu cầu: {len(self.current_spec.requirements)}\n"
                 f"- Số hàm sinh mã: {len(self.current_spec.functions)}\n"
-                f"- Số kiểm tra số học: {len(self.current_spec.arithmetic_checks)}\n\n"
-                f"Bấm '1) Sinh Kripke + Kiểm chứng' hoặc '3) Chạy TOÀN BỘ Pipeline' để bắt đầu."
+                f"- Số kiểm tra số học Z3: {len(self.current_spec.arithmetic_checks)}\n\n"
+                f"Bấm '1️⃣ Kripke' hoặc '🚀 CHẠY TOÀN BỘ PIPELINE' để bắt đầu."
             )
         except Exception as e:
             QMessageBox.critical(self, "Lỗi đọc file", f"Không thể nạp đặc tả: {e}")
@@ -554,7 +619,8 @@ class ModernSpecVerificationLab(QMainWindow):
 
         self.current_kripke_model.draw_to_figure(self.figure, highlight_violations=viols, highlight_path=path)
         self.canvas.draw()
-        self.tabs.setCurrentIndex(0)
+        self.upper_tabs.setCurrentIndex(0)
+        self.console_tabs.setCurrentIndex(0)
         self.status_bar.showMessage("Đã hoàn tất Kiểm chứng Kripke (Ch1).")
 
     def _run_ch2(self):
@@ -562,7 +628,7 @@ class ModernSpecVerificationLab(QMainWindow):
             return
         self.generated_functions = generate_all_functions(self.current_spec)
         self._on_func_selected()
-        self.tabs.setCurrentIndex(1)
+        self.upper_tabs.setCurrentIndex(1)
         self.status_bar.showMessage("Đã sinh mã nguồn C / Python (Ch2).")
 
     def _run_ch3(self):
@@ -572,6 +638,7 @@ class ModernSpecVerificationLab(QMainWindow):
         self.txt_smt.clear()
         for r in self.smt_results:
             self.txt_smt.append(r.details + "\n")
+        self.console_tabs.setCurrentIndex(1)
         self.status_bar.showMessage("Đã hoàn tất phân tích SMT / Z3 (Ch3).")
 
     def _run_ch4(self):
@@ -607,7 +674,7 @@ class ModernSpecVerificationLab(QMainWindow):
             self.table_cwe.setItem(row, 5, QTableWidgetItem(f.illustrative_cve))
 
         self.lbl_cwe_summary.setText(
-            f"Tổng số lỗ hổng: {self.security_audit.total_findings} | "
+            f"Tổng số lỗ hổng phát hiện: {self.security_audit.total_findings} | "
             f"CRITICAL: {self.security_audit.critical_count} | "
             f"HIGH: {self.security_audit.high_count} | "
             f"MEDIUM: {self.security_audit.medium_count}"
@@ -615,6 +682,7 @@ class ModernSpecVerificationLab(QMainWindow):
 
         if self.security_audit.findings:
             self.table_cwe.selectRow(0)
+        self.upper_tabs.setCurrentIndex(2)
         self.status_bar.showMessage("Đã hoàn tất phân tích CWE/CVE (Ch4).")
 
     def _run_full_pipeline(self):
@@ -694,13 +762,21 @@ class ModernSpecVerificationLab(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Lỗi", f"Không thể lưu báo cáo: {e}")
 
+    def _toggle_theme(self):
+        self.is_dark_theme = not self.is_dark_theme
+        theme = "dark" if self.is_dark_theme else "light"
+        qdarktheme.setup_theme(theme)
+        if self.current_kripke_model:
+            facecolor = "#202124" if self.is_dark_theme else "#ffffff"
+            self.figure.patch.set_facecolor(facecolor)
+            self.current_kripke_model.draw_to_figure(self.figure)
+            self.canvas.draw()
+
 
 def main():
     app = QApplication(sys.argv)
-    # Apply modern theme
     qdarktheme.setup_theme("dark")
 
-    # Set application font
     font = QFont("DejaVu Sans", 10)
     app.setFont(font)
 
