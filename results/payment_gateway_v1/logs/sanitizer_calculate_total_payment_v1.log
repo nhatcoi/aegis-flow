@@ -1,0 +1,7 @@
+$ /usr/bin/clang -fsanitize=address,undefined -fno-omit-frame-pointer -g -O0 -o calculate_total_payment_v1.bin calculate_total_payment_v1.c calculate_total_payment_v1_harness.c
+# input: (INT_MAX, 1)
+# exit code: 0
+# status: clean
+# note: LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
+
+rc=-1 out=0

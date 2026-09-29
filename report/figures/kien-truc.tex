@@ -1,0 +1,19 @@
+% Hình: kiến trúc luồng thanh toán và trust boundary
+\begin{tikzpicture}[node distance=7mm and 9mm]
+  \node[box] (kh) {Khách hàng\\(trình duyệt)};
+  \node[box,right=of kh] (shop) {Order Service\\(tạo đơn)};
+  \node[box,right=of shop] (pay) {Payment Service\\\code{parse\_webhook\_signature}\\\code{calculate\_total\_payment}};
+  \node[box,below=12mm of pay] (ful) {Fulfilment\\(giao hàng)};
+  \node[box,right=16mm of pay,fill=black!5] (gw) {Cổng thanh toán\\(bên thứ ba)};
+
+  \draw[arr] (kh) -- node[above,font=\scriptsize]{đặt hàng} (shop);
+  \draw[arr] (shop) -- node[above,font=\scriptsize]{start} (pay);
+  \draw[arr] (pay.north east) to[bend left=20] node[above,font=\scriptsize]{yêu cầu thu} (gw.north west);
+  \draw[arr,bad,thick] (gw.south west) to[bend left=20] node[below,font=\scriptsize,text=bad]{webhook} (pay.south east);
+  \draw[arr] (pay) -- node[right,font=\scriptsize]{ship (chỉ khi paid)} (ful);
+
+  \begin{scope}[on background layer]
+    \node[draw=bad,dashed,thick,rounded corners,inner sep=4mm,fit=(shop)(pay)(ful),
+          label={[font=\scriptsize,text=bad]above:Trust boundary — hệ thống nội bộ}] {};
+  \end{scope}
+\end{tikzpicture}

@@ -1,0 +1,40 @@
+== refund_ratio v0 blackbox
+== refund_ratio v0 coverage
+  lần 1: coverage mới 2 dòng với input (1, 1)
+  lần 6: coverage mới 3 dòng với input (1, 0)
+== refund_ratio v0 concolic
+  lần 1: input (1, 1), path condition: ['Not(0 == total_amount)', 'total_amount != 0']
+  lần 2: input (-2147483648, 0), path condition: ['0 == total_amount']
+  lần 3: input (0, -1), path condition: ['Not(0 == total_amount)', 'total_amount != 0']
+== refund_ratio v1 blackbox
+== refund_ratio v1 coverage
+  lần 1: coverage mới 2 dòng với input (1, 1)
+  lần 6: coverage mới 3 dòng với input (1, 0)
+== refund_ratio v1 concolic
+  lần 1: input (1, 1), path condition: ['Not(0 == total_amount)', 'total_amount != 0']
+  lần 2: input (-2147483648, 0), path condition: ['0 == total_amount']
+  lần 3: input (0, -1), path condition: ['Not(0 == total_amount)', 'total_amount != 0']
+== webhook_bypass_token v0 blackbox
+== webhook_bypass_token v0 coverage
+  lần 1: coverage mới 3 dòng với input (1, 1)
+== webhook_bypass_token v0 concolic
+  lần 1: input (1, 1), path condition: []
+  Hàm gọi thư viện/môi trường ngoài (os.environ, hmac) mà engine không mô hình hóa được — concolic dừng (giới hạn environment modeling, Ch.4.6).
+== webhook_bypass_token v1 blackbox
+== webhook_bypass_token v1 coverage
+  lần 1: coverage mới 3 dòng với input (1, 1)
+== webhook_bypass_token v1 concolic
+  lần 1: input (1, 1), path condition: []
+  Hàm gọi thư viện/môi trường ngoài (os.environ, hmac) mà engine không mô hình hóa được — concolic dừng (giới hạn environment modeling, Ch.4.6).
+== support_override_pin v0 blackbox
+== support_override_pin v0 coverage
+  lần 1: coverage mới 3 dòng với input (1, 1)
+== support_override_pin v0 concolic
+  lần 1: input (1, 1), path condition: []
+  Hàm gọi thư viện/môi trường ngoài (os.environ, hmac) mà engine không mô hình hóa được — concolic dừng (giới hạn environment modeling, Ch.4.6).
+== support_override_pin v1 blackbox
+== support_override_pin v1 coverage
+  lần 1: coverage mới 3 dòng với input (1, 1)
+== support_override_pin v1 concolic
+  lần 1: input (1, 1), path condition: []
+  Hàm gọi thư viện/môi trường ngoài (os.environ, hmac) mà engine không mô hình hóa được — concolic dừng (giới hạn environment modeling, Ch.4.6).

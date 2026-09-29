@@ -1,0 +1,91 @@
+% ---------------------------------------------------------------
+% Preamble — biên dịch bằng XeLaTeX (Overleaf: Menu > Compiler > XeLaTeX)
+% ---------------------------------------------------------------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{vietnamese}
+% TeX Gyre Termes = font tương đương Times New Roman. Nạp theo tên file để chạy được cả trên tectonic lẫn Overleaf/TeX Live
+\setmainfont{texgyretermes}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+  ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setmonofont{texgyrecursor}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+  ItalicFont=*-italic, BoldItalicFont=*-bolditalic, Scale=0.95]
+
+\usepackage{setspace}
+\onehalfspacing
+\setlength{\emergencystretch}{3em}  % giảm dòng tràn lề khi có tên file dài
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{adjustbox}
+\usepackage{booktabs,tabularx,longtable,multirow}
+\usepackage{array}
+\usepackage[table]{xcolor}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\usepackage{float}
+\usepackage{enumitem}
+\setlist{nosep,leftmargin=*}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes,fit,backgrounds,calc}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{listings}
+\usepackage{titlesec}
+% Tiêu đề chương gọn (mặc định của lớp report để trống nửa trang)
+\titleformat{\chapter}[hang]{\LARGE\bfseries}{\thechapter.}{0.6em}{}
+\titlespacing*{\chapter}{0pt}{-10pt}{14pt}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+% --- Header/footer ---
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small CSE703093 — An toàn phần mềm}
+\fancyhead[R]{\small Bài tập lớn}
+\fancyfoot[C]{\thepage}
+
+% --- Màu ---
+\definecolor{bad}{HTML}{C62828}
+\definecolor{good}{HTML}{2E7D32}
+\definecolor{note}{HTML}{1565C0}
+\definecolor{codebg}{HTML}{F6F8FA}
+
+% --- Macro ---
+% \TODO{...}: chỗ cần điền kết quả thật từ results/ — xóa hết trước khi nộp
+\newcommand{\TODO}[1]{\textcolor{bad}{\textbf{[TODO: #1]}}}
+\newcommand{\cwe}[2]{\textbf{CWE-#1} (#2)}
+% \code{...}: cho phép xuống dòng sau "_" trong tên hàm, tên file dài
+\newcommand{\codeus}{\textunderscore\allowbreak}
+\DeclareRobustCommand{\code}[1]{\texttt{\let\_\codeus #1}}
+\newcommand{\req}[1]{\textsf{#1}}
+
+% Hộp ghi chú
+\newtcolorbox{ghichu}[1][]{colback=note!5,colframe=note!60,boxrule=0.5pt,
+  arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt,fonttitle=\bfseries\small,title={#1}}
+
+% --- Listings (giữ mã nguồn ASCII để tránh lỗi mã hóa) ---
+\lstdefinestyle{base}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{black!15},
+  numbers=left, numberstyle=\tiny\color{black!50}, numbersep=6pt,
+  keywordstyle=\color{note}\bfseries,
+  commentstyle=\color{black!55}\itshape,
+  stringstyle=\color{good!70!black},
+  showstringspaces=false, breaklines=true, columns=fullflexible,
+  xleftmargin=1.5em, framexleftmargin=1.5em, captionpos=b
+}
+\lstset{style=base}
+\lstdefinelanguage{log}{morecomment=[l]{\#}}
+\lstdefinestyle{logstyle}{style=base,language=log,numbers=none,backgroundcolor=\color{black!3}}
+\renewcommand{\lstlistingname}{Đoạn mã}
+
+% --- TikZ styles ---
+\tikzset{
+  st/.style={draw,circle,minimum size=13mm,align=center,font=\scriptsize,fill=white},
+  init/.style={st,fill=note!15},
+  viol/.style={st,fill=bad!25,draw=bad},
+  box/.style={draw,rounded corners=2pt,minimum height=9mm,align=center,font=\small,fill=white},
+  arr/.style={-{Stealth[length=2mm]},semithick},
+}

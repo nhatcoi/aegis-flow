@@ -127,19 +127,33 @@ Moi dong 1 cong thuc, 1 cot `CongThucCTL`:
 | AG(!violation) |
 | EF(p1) |
 
-Cu phap ho tro giong JSON: `AG(p)`, `EF(p)`, `AF(p)`, `EG(p)`, `AX(p)`,
-`EX(p)`, va phu dinh don gian `AG(!p)`.
+Cu phap CTL day du (parser de quy trong `core/ctl.py`):
+
+- Toan tu thoi gian: `AG`, `AF`, `AX`, `EG`, `EF`, `EX`, `E[p U q]`, `A[p U q]`
+  (long nhau tuy y, vd `AG(p -> AF(q | r))`).
+- Toan tu logic: `!` `~` (phu dinh), `&` `&&`, `|` `||`, `->` `=>`, `<->`, ngoac `( )`,
+  hang `true` / `false`.
+- Cong thuc duoc kiem tra tai **moi** trang thai khoi tao. Vi vay voi mo hinh co
+  nhieu cum doc lap, viet `safe -> EF(webhook_locked)` thay vi `EF(webhook_locked)`.
+- Cong thuc sai cu phap duoc bao **LOI**, khong bao gio duoc coi la DAT.
+- Nhan khong ton tai o trang thai nao se sinh CANH BAO (de phat hien sai chinh ta).
+- Cong thuc sai kem phan vi du: duong di toi trang thai vi pham, hoac duong
+  lap vo han (lasso) voi thuoc tinh song con `AF`.
+- Moi thuoc tinh dang `AG(phi)` (phi khong chua toan tu thoi gian) con duoc kiem
+  chung lai bang BMC voi Z3 (`core/bmc.py`) va bao completeness threshold.
 
 ## 8. Sheet `LoaiTruLanNhau` — Mutual exclusion
 
-Toi da 1 dong du lieu:
+Moi dong la mot cap menh de khong duoc cung dung:
 
 | MenhDe1 | MenhDe2 |
 |---|---|
 | p1 | p2 |
+| processing | paid |
 
-Tuong duong `mutual_exclusion: {"atom1": "p1", "atom2": "p2"}` trong JSON.
-De trong (khong co dong nao) neu khong can kiem tra.
+**Tat ca** cac dong deu duoc kiem tra (cong cu goc cua mon hoc chi kiem tra dong dau).
+Tuong duong `mutual_exclusion: {"atom1": "p1", "atom2": "p2"}` (hoac mot danh sach
+cac doi tuong nhu vay) trong JSON. De trong neu khong can kiem tra.
 
 ## 9. Sheet `HamSinhMa` — Sinh ma nguon (Chuong 2-4)
 
@@ -157,8 +171,13 @@ De trong (khong co dong nao) neu khong can kiem tra.
   dung mac dinh).
 - `KichThuocBuffer`: chi dung cho `buffer_copy`/`alloc_release` (mac dinh
   16 neu de trong).
-- `Loi` (`bug`): de trong (khong tiem loi) hoac mot trong `buffer-overflow`
-  \| `memory-leak` \| `double-free` \| `use-after-free` (chi C).
+- `Loi` (`bug`): loi cai co chu dich vao ban v0.
+  - C: de trong (khong loi) hoac `buffer-overflow` \| `memory-leak` \| `double-free`
+    \| `use-after-free` \| `integer-overflow` (chi voi `arithmetic`).
+  - Python: de trong giu nghia cua cong cu goc (`divide`, `magic_value` luon co loi);
+    ghi `safe` de khai bao ham da va (dung cho dac ta v1).
+- Moi ham duoc sinh 2 ban cung chu ky: v0 (co loi da khai bao) va v1 (da va), de
+  cung mot harness/fuzzer chay duoc tren ca hai va tao bang truoc/sau.
 - `GiaTriBiMat1`/`GiaTriBiMat2`: chi dung cho `kind = magic_value`
   (Python) — tuong ung `magic_values: [m1, m2]` trong JSON.
 
@@ -184,18 +203,23 @@ De trong (khong co dong nao) neu khong can kiem tra.
   (requirement traceability) — phan cach boi dau phay.
 - `CacBuoc`: moi buoc kiem thu tren **1 dong** trong cung 1 o Excel (xuong
   dong bang Alt+Enter khi nhap lieu).
-- Sheet nay **chi mang tinh tai lieu hoa/bao cao**: `run_pipeline()` KHONG
-  tu dong thuc thi cac test case nay — muc dich la ren luyen ky nang viet
-  test case truy vet tu dac ta yeu cau, mot buoc quan trong cua quy trinh
-  Requirements Engineering va lien he truc tiep toi cau truc tai lieu
-  kiem thu IEEE 829 duoc gioi thieu trong bai giang Chuong 8 (CSE703184).
-  Bao cao pipeline (`report.to_text()`) van liet ke lai day du cac test
-  case nay o phan "[Test Case] Truy vết từ đặc tả".
+- `KetQuaMongDoi` duoc `core.pipeline.evaluate_test_case` **danh gia tu dong**
+  (PASS / FAIL / NOT_EVALUATED) khi chua mot trong cac menh de sau (co the phu
+  dinh bang "Khong"):
+  - `CWE-xxx` [tai `<ten_ham>`] — vd `Khong phat hien CWE-120 tai parse_webhook_signature`;
+  - mot cong thuc CTL cua sheet 7 theo sau boi `DUNG`/`SAI` — vd `AG(!violation) DUNG`;
+  - `khong co trang thai deadlock`;
+  - `SAT` / `UNSAT` (ket qua Z3 cua sheet 10);
+  - `crash` / `ZeroDivisionError` / `bypass` [tai `<ten_ham>`];
+  - mot cap input `(a, b)` ma fuzzer phai tim ra.
+
+  Cac cau khong chua tieu chi nao o tren duoc danh dau NOT_EVALUATED (chi tai lieu hoa).
 
 ## 12. Cac dac ta mau co san
 
 | File | Minh hoa |
 |---|---|
+| `payment_gateway_v0_spec.xlsx` / `payment_gateway_v1_spec.xlsx` | Dac ta chinh cua de tai (sinh bang `scripts/build_payment_specs.py`): cung yeu cau, thuoc tinh va 12 test case; v0 la thiet ke co loi, v1 la thiet ke da sua. Chay `python -m core.pipeline <v0> --compare <v1>` de co bang so sanh |
 | `session_manager_spec.xlsx` | Tuong duong `session_manager_spec.json`: mo hinh mutex CO LOI + ham buffer bi tran, bo sung 2 yeu cau phi chuc nang, 2 rang buoc, 3 test case truy vet |
 | `resource_pool_spec.xlsx` | Tuong duong `resource_pool_spec.json`: tap trung Chuong 2-4 (memory-leak, double-free, tran so, 2 muc tieu fuzzing), khong co state machine, bo sung yeu cau phi chuc nang/rang buoc/4 test case |
 | `iot_gateway_spec.xlsx` | Tuong duong `iot_gateway_spec.json`: dac ta day du nhat, dung ca 4 chuong dau, bo sung 3 yeu cau phi chuc nang, 3 rang buoc, 6 test case truy vet |

@@ -1,0 +1,1173 @@
+{
+  "spec": "payment_gateway_v0",
+  "environment": {
+    "thời gian": "2026-09-29 23:30:14 +0700",
+    "hệ điều hành": "Darwin 25.2.0 (arm64)",
+    "python": "3.11.15",
+    "z3-solver": "4.16.0",
+    "trình biên dịch C": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
+    "seed": "1",
+    "ngân sách fuzzing": "2000"
+  },
+  "timings_seconds": {
+    "ch1_kripke": 0.0005,
+    "ch3_bmc": 0.1306,
+    "codegen": 0.0001,
+    "ch2_static": 0.006,
+    "ch2_sanitizers": 6.5075,
+    "ch3_smt": 0.0278,
+    "ch4_fuzz": 0.1034,
+    "cwe": 0.0006
+  },
+  "kripke": {
+    "valid": false,
+    "states": 14,
+    "transitions": 23,
+    "deadlocks": [
+      "REFUNDING"
+    ],
+    "properties": [
+      {
+        "formula": "Kiểm tra Deadlock (Bế tắc)",
+        "status": "fail",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(webhook_locked & recon_locked))",
+        "status": "fail",
+        "counterexample": [
+          "ledger_free",
+          "webhook_holds",
+          "lock_conflict"
+        ],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(violation & safe))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(processing & paid))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(paid & failed))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(timeout & paid))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!violation)",
+        "status": "fail",
+        "counterexample": [
+          "ledger_free",
+          "webhook_holds",
+          "lock_conflict"
+        ],
+        "loop_start": null
+      },
+      {
+        "formula": "safe -> EF(webhook_locked)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(shipped -> paid)",
+        "status": "fail",
+        "counterexample": [
+          "CREATED",
+          "PENDING",
+          "UNKNOWN",
+          "SHIPPED_UNPAID"
+        ],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(timeout -> AF(paid | failed))",
+        "status": "fail",
+        "counterexample": [
+          "CREATED",
+          "PENDING",
+          "UNKNOWN",
+          "UNKNOWN"
+        ],
+        "loop_start": 2
+      },
+      {
+        "formula": "AG(!double_capture)",
+        "status": "fail",
+        "counterexample": [
+          "CREATED",
+          "PENDING",
+          "SUCCEEDED",
+          "DUPLICATE_CAPTURE"
+        ],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(processing & paid))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "created -> EF(shipped)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(refunding -> AF(refunded))",
+        "status": "fail",
+        "counterexample": [
+          "CREATED",
+          "PENDING",
+          "SUCCEEDED",
+          "REFUNDING",
+          "REFUNDING"
+        ],
+        "loop_start": 3
+      }
+    ]
+  },
+  "bmc": [
+    {
+      "property": "AG(!violation)",
+      "status": "unsafe",
+      "depth": 2,
+      "completeness_threshold": 3,
+      "counterexample": [
+        "ledger_free",
+        "webhook_holds",
+        "lock_conflict"
+      ]
+    },
+    {
+      "property": "AG(shipped -> paid)",
+      "status": "unsafe",
+      "depth": 3,
+      "completeness_threshold": 3,
+      "counterexample": [
+        "CREATED",
+        "PENDING",
+        "UNKNOWN",
+        "SHIPPED_UNPAID"
+      ]
+    },
+    {
+      "property": "AG(!double_capture)",
+      "status": "unsafe",
+      "depth": 3,
+      "completeness_threshold": 3,
+      "counterexample": [
+        "CREATED",
+        "PENDING",
+        "SUCCEEDED",
+        "DUPLICATE_CAPTURE"
+      ]
+    },
+    {
+      "property": "AG(!(processing & paid))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 3,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(webhook_locked & recon_locked))",
+      "status": "unsafe",
+      "depth": 2,
+      "completeness_threshold": 3,
+      "counterexample": [
+        "ledger_free",
+        "webhook_holds",
+        "lock_conflict"
+      ]
+    },
+    {
+      "property": "AG(!(violation & safe))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 3,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(paid & failed))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 3,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(timeout & paid))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 3,
+      "counterexample": []
+    }
+  ],
+  "static": {
+    "parse_webhook_signature/v0": [
+      {
+        "rule": "dangerous-function",
+        "cwe": "CWE-120",
+        "severity": "HIGH",
+        "function": "parse_webhook_signature",
+        "line": 9,
+        "code": "strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */",
+        "message": "Gọi 'strcpy()' không giới hạn kích thước đích — dùng strnlen + memcpy."
+      }
+    ],
+    "parse_webhook_signature/v1": [],
+    "parse_order_id/v0": [],
+    "parse_order_id/v1": [],
+    "write_audit_log/v0": [
+      {
+        "rule": "memory-leak",
+        "cwe": "CWE-401",
+        "severity": "MEDIUM",
+        "function": "write_audit_log",
+        "line": 12,
+        "code": "return 0; /* thoat ma khong free */",
+        "message": "'data' cấp phát tại dòng 8 không được free() trước khi thoát hàm."
+      }
+    ],
+    "write_audit_log/v1": [],
+    "close_payment_session/v0": [
+      {
+        "rule": "double-free",
+        "cwe": "CWE-415",
+        "severity": "HIGH",
+        "function": "close_payment_session",
+        "line": 13,
+        "code": "free(data); /* giai phong lan thu hai */",
+        "message": "free('data') lần hai (đã free() tại dòng 12)."
+      }
+    ],
+    "close_payment_session/v1": [],
+    "release_card_token_buffer/v0": [
+      {
+        "rule": "use-after-free",
+        "cwe": "CWE-416",
+        "severity": "HIGH",
+        "function": "release_card_token_buffer",
+        "line": 12,
+        "code": "data[0] = 'A'; /* ghi sau khi da free */",
+        "message": "Dùng 'data' sau khi đã free() tại dòng 11."
+      }
+    ],
+    "release_card_token_buffer/v1": [],
+    "calculate_total_payment/v0": [],
+    "calculate_total_payment/v1": []
+  },
+  "sanitizers": [
+    {
+      "function": "parse_webhook_signature",
+      "version": "v0",
+      "status": "detected",
+      "detections": [
+        [
+          "stack-buffer-overflow",
+          "CWE-121",
+          9
+        ]
+      ]
+    },
+    {
+      "function": "parse_webhook_signature",
+      "version": "v1",
+      "status": "clean",
+      "detections": []
+    },
+    {
+      "function": "write_audit_log",
+      "version": "v0",
+      "status": "clean",
+      "detections": []
+    },
+    {
+      "function": "write_audit_log",
+      "version": "v1",
+      "status": "clean",
+      "detections": []
+    },
+    {
+      "function": "close_payment_session",
+      "version": "v0",
+      "status": "detected",
+      "detections": [
+        [
+          "double-free",
+          "CWE-415",
+          13
+        ]
+      ]
+    },
+    {
+      "function": "close_payment_session",
+      "version": "v1",
+      "status": "clean",
+      "detections": []
+    },
+    {
+      "function": "release_card_token_buffer",
+      "version": "v0",
+      "status": "detected",
+      "detections": [
+        [
+          "heap-use-after-free",
+          "CWE-416",
+          12
+        ]
+      ]
+    },
+    {
+      "function": "release_card_token_buffer",
+      "version": "v1",
+      "status": "clean",
+      "detections": []
+    },
+    {
+      "function": "calculate_total_payment",
+      "version": "v0",
+      "status": "detected",
+      "detections": [
+        [
+          "signed-integer-overflow",
+          "CWE-190",
+          5
+        ]
+      ]
+    },
+    {
+      "function": "calculate_total_payment",
+      "version": "v1",
+      "status": "clean",
+      "detections": []
+    }
+  ],
+  "smt": [
+    {
+      "name": "order_total_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "amount": 2147483647,
+        "shipping_fee": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2147204848,
+      "patch": "unsat"
+    },
+    {
+      "name": "daily_transaction_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "tx_today": 2147483647,
+        "tx_backlog": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2129640465,
+      "patch": "unsat"
+    },
+    {
+      "name": "active_session_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "active_sessions": 2147483647,
+        "pending_sessions": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2145843031,
+      "patch": "unsat"
+    },
+    {
+      "name": "refund_total_vnd",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "refunded_vnd": 2147483647,
+        "pending_refund_vnd": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2143285231,
+      "patch": "unsat"
+    },
+    {
+      "name": "webhook_retry_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "retries_today": 2147483647,
+        "retries_backlog": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2111565480,
+      "patch": "unsat"
+    },
+    {
+      "name": "settlement_batch_bytes",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "batch_bytes": 2147483647,
+        "header_bytes": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2145771516,
+      "patch": "unsat"
+    }
+  ],
+  "fuzz": [
+    {
+      "function": "refund_ratio",
+      "version": "v0",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 47,
+      "first_hit": 48,
+      "first_input": [
+        2147483646,
+        0
+      ],
+      "finding": "ZeroDivisionError",
+      "cwe": "CWE-369",
+      "seconds": 0.029641625005751848,
+      "lines_covered": 0
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v0",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 24,
+      "first_hit": 6,
+      "first_input": [
+        1,
+        0
+      ],
+      "finding": "ZeroDivisionError",
+      "cwe": "CWE-369",
+      "seconds": 0.0038541670073755085,
+      "lines_covered": 1
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v0",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 3,
+      "hits": 1,
+      "first_hit": 2,
+      "first_input": [
+        -2147483648,
+        0
+      ],
+      "finding": "ZeroDivisionError",
+      "cwe": "CWE-369",
+      "seconds": 0.004386415996123105,
+      "lines_covered": 0
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v1",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0019448750535957515,
+      "lines_covered": 0
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v1",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0037858749856241047,
+      "lines_covered": 3
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v1",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 3,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.003957124950829893,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v0",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.001752957992721349,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v0",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.003905166988261044,
+      "lines_covered": 2
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v0",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 5,
+      "hits": 1,
+      "first_hit": 4,
+      "first_input": [
+        7788,
+        9999
+      ],
+      "finding": "bypass",
+      "cwe": "CWE-798",
+      "seconds": 0.014898041961714625,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v1",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0025505420053377748,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v1",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0059367920039221644,
+      "lines_covered": 3
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v1",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 1,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 5.5500015150755644e-05,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v0",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0017120830016210675,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v0",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.004077749967109412,
+      "lines_covered": 2
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v0",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 5,
+      "hits": 1,
+      "first_hit": 4,
+      "first_input": [
+        4821,
+        7306
+      ],
+      "finding": "bypass",
+      "cwe": "CWE-798",
+      "seconds": 0.009132249979302287,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v1",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.002479415968991816,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v1",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0060480000101961195,
+      "lines_covered": 3
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v1",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 1,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 5.099998088553548e-05,
+      "lines_covered": 0
+    }
+  ],
+  "findings": [
+    {
+      "cwe": "CWE-667",
+      "name": "Improper Locking",
+      "severity": "HIGH",
+      "component": "AG(!(webhook_locked & recon_locked))",
+      "status": "confirmed",
+      "tools": [
+        "Kripke",
+        "BMC (Z3)"
+      ],
+      "before": [
+        "AG(!(webhook_locked & recon_locked)) sai; phản ví dụ: ledger_free -> webhook_holds -> lock_conflict",
+        "BMC SAT tại k=2: ledger_free -> webhook_holds -> lock_conflict"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-693",
+      "name": "Protection Mechanism Failure",
+      "severity": "HIGH",
+      "component": "AG(!violation)",
+      "status": "confirmed",
+      "tools": [
+        "CTL",
+        "BMC (Z3)"
+      ],
+      "before": [
+        "AG(!violation) sai; phản ví dụ: ledger_free -> webhook_holds -> lock_conflict",
+        "BMC SAT tại k=2: ledger_free -> webhook_holds -> lock_conflict"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-693",
+      "name": "Protection Mechanism Failure",
+      "severity": "HIGH",
+      "component": "AG(shipped -> paid)",
+      "status": "confirmed",
+      "tools": [
+        "CTL",
+        "BMC (Z3)"
+      ],
+      "before": [
+        "AG(shipped -> paid) sai; phản ví dụ: CREATED -> PENDING -> UNKNOWN -> SHIPPED_UNPAID",
+        "BMC SAT tại k=3: CREATED -> PENDING -> UNKNOWN -> SHIPPED_UNPAID"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-693",
+      "name": "Protection Mechanism Failure",
+      "severity": "HIGH",
+      "component": "AG(timeout -> AF(paid | failed))",
+      "status": "confirmed",
+      "tools": [
+        "CTL"
+      ],
+      "before": [
+        "AG(timeout -> AF(paid | failed)) sai; phản ví dụ: CREATED -> PENDING -> UNKNOWN -> UNKNOWN"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-693",
+      "name": "Protection Mechanism Failure",
+      "severity": "HIGH",
+      "component": "AG(!double_capture)",
+      "status": "confirmed",
+      "tools": [
+        "CTL",
+        "BMC (Z3)"
+      ],
+      "before": [
+        "AG(!double_capture) sai; phản ví dụ: CREATED -> PENDING -> SUCCEEDED -> DUPLICATE_CAPTURE",
+        "BMC SAT tại k=3: CREATED -> PENDING -> SUCCEEDED -> DUPLICATE_CAPTURE"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-693",
+      "name": "Protection Mechanism Failure",
+      "severity": "HIGH",
+      "component": "AG(refunding -> AF(refunded))",
+      "status": "confirmed",
+      "tools": [
+        "CTL"
+      ],
+      "before": [
+        "AG(refunding -> AF(refunded)) sai; phản ví dụ: CREATED -> PENDING -> SUCCEEDED -> REFUNDING -> REFUNDING"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-833",
+      "name": "Deadlock",
+      "severity": "HIGH",
+      "component": "Mô hình trạng thái",
+      "status": "confirmed",
+      "tools": [
+        "Kripke"
+      ],
+      "before": [
+        "Trạng thái deadlock: REFUNDING"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-120",
+      "name": "Buffer Copy without Checking Size of Input",
+      "severity": "CRITICAL",
+      "component": "parse_webhook_signature",
+      "status": "confirmed",
+      "tools": [
+        "Static scanner",
+        "ASan/UBSan"
+      ],
+      "before": [
+        "Scanner: dangerous-function tại dòng 9 (`strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */`)",
+        "Sanitizer: stack-buffer-overflow tại dòng 9 với input chuỗi 520 ký tự 'A' (gấp 8 lần bộ đệm 65 byte)"
+      ],
+      "after": [
+        "Scanner v1: 0 finding",
+        "Sanitizer v1: sạch"
+      ],
+      "fixed": true,
+      "requirements": [
+        "REQ-5"
+      ]
+    },
+    {
+      "cwe": "CWE-401",
+      "name": "Missing Release of Memory after Effective Lifetime",
+      "severity": "MEDIUM",
+      "component": "write_audit_log",
+      "status": "confirmed",
+      "tools": [
+        "Static scanner"
+      ],
+      "before": [
+        "Scanner: memory-leak tại dòng 12 (`return 0; /* thoat ma khong free */`)"
+      ],
+      "after": [
+        "Scanner v1: 0 finding",
+        "Sanitizer v1: sạch"
+      ],
+      "fixed": true,
+      "requirements": [
+        "REQ-6"
+      ]
+    },
+    {
+      "cwe": "CWE-415",
+      "name": "Double Free",
+      "severity": "HIGH",
+      "component": "close_payment_session",
+      "status": "confirmed",
+      "tools": [
+        "Static scanner",
+        "ASan/UBSan"
+      ],
+      "before": [
+        "Scanner: double-free tại dòng 13 (`free(data); /* giai phong lan thu hai */`)",
+        "Sanitizer: double-free tại dòng 13 với input gọi hàm một lần"
+      ],
+      "after": [
+        "Scanner v1: 0 finding",
+        "Sanitizer v1: sạch"
+      ],
+      "fixed": true,
+      "requirements": [
+        "REQ-7"
+      ]
+    },
+    {
+      "cwe": "CWE-416",
+      "name": "Use After Free",
+      "severity": "CRITICAL",
+      "component": "release_card_token_buffer",
+      "status": "confirmed",
+      "tools": [
+        "Static scanner",
+        "ASan/UBSan"
+      ],
+      "before": [
+        "Scanner: use-after-free tại dòng 12 (`data[0] = 'A'; /* ghi sau khi da free */`)",
+        "Sanitizer: heap-use-after-free tại dòng 12 với input gọi hàm một lần"
+      ],
+      "after": [
+        "Scanner v1: 0 finding",
+        "Sanitizer v1: sạch"
+      ],
+      "fixed": true,
+      "requirements": [
+        "REQ-8"
+      ]
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "calculate_total_payment",
+      "status": "confirmed",
+      "tools": [
+        "ASan/UBSan"
+      ],
+      "before": [
+        "Sanitizer: signed-integer-overflow tại dòng 5 với input (INT_MAX, 1)"
+      ],
+      "after": [
+        "Scanner v1: 0 finding",
+        "Sanitizer v1: sạch"
+      ],
+      "fixed": true,
+      "requirements": [
+        "REQ-9"
+      ]
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "order_total_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'amount': 2147483647, 'shipping_fee': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2147204848"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "daily_transaction_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'tx_today': 2147483647, 'tx_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2129640465"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "active_session_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'active_sessions': 2147483647, 'pending_sessions': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145843031"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "refund_total_vnd",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'refunded_vnd': 2147483647, 'pending_refund_vnd': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2143285231"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "webhook_retry_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'retries_today': 2147483647, 'retries_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2111565480"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "settlement_batch_bytes",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'batch_bytes': 2147483647, 'header_bytes': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145771516"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-369",
+      "name": "Divide By Zero",
+      "severity": "MEDIUM",
+      "component": "refund_ratio",
+      "status": "confirmed",
+      "tools": [
+        "Fuzzing (blackbox)",
+        "Fuzzing (coverage)",
+        "Fuzzing (concolic)"
+      ],
+      "before": [
+        "blackbox: ZeroDivisionError ở lần thử 48/2000, input (2147483646, 0)",
+        "coverage: ZeroDivisionError ở lần thử 6/2000, input (1, 0)",
+        "concolic: ZeroDivisionError ở lần thử 2/2000, input (-2147483648, 0)"
+      ],
+      "after": [
+        "blackbox v1: 0/2000 lỗi",
+        "coverage v1: 0/2000 lỗi",
+        "concolic v1: 0/3 lỗi"
+      ],
+      "fixed": true,
+      "requirements": [
+        "REQ-10"
+      ]
+    },
+    {
+      "cwe": "CWE-798",
+      "name": "Use of Hard-coded Credentials",
+      "severity": "CRITICAL",
+      "component": "webhook_bypass_token",
+      "status": "confirmed",
+      "tools": [
+        "Fuzzing (concolic)"
+      ],
+      "before": [
+        "concolic: bypass ở lần thử 4/2000, input (7788, 9999)"
+      ],
+      "after": [
+        "blackbox v1: 0/2000 lỗi",
+        "coverage v1: 0/2000 lỗi",
+        "concolic v1: 0/1 lỗi"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-798",
+      "name": "Use of Hard-coded Credentials",
+      "severity": "CRITICAL",
+      "component": "support_override_pin",
+      "status": "confirmed",
+      "tools": [
+        "Fuzzing (concolic)"
+      ],
+      "before": [
+        "concolic: bypass ở lần thử 4/2000, input (4821, 7306)"
+      ],
+      "after": [
+        "blackbox v1: 0/2000 lỗi",
+        "coverage v1: 0/2000 lỗi",
+        "concolic v1: 0/1 lỗi"
+      ],
+      "fixed": true,
+      "requirements": []
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "status": "FAIL",
+      "reason": "AG(!violation) = sai (mong đợi đúng); deadlock: REFUNDING"
+    },
+    {
+      "id": "TC-2",
+      "status": "FAIL",
+      "reason": "AG(shipped -> paid) = sai (mong đợi đúng)"
+    },
+    {
+      "id": "TC-3",
+      "status": "FAIL",
+      "reason": "AG(timeout -> AF(paid | failed)) = sai (mong đợi đúng)"
+    },
+    {
+      "id": "TC-4",
+      "status": "FAIL",
+      "reason": "AG(!double_capture) = sai (mong đợi đúng)"
+    },
+    {
+      "id": "TC-5",
+      "status": "FAIL",
+      "reason": "AG(refunding -> AF(refunded)) = sai (mong đợi đúng); deadlock: REFUNDING"
+    },
+    {
+      "id": "TC-6",
+      "status": "FAIL",
+      "reason": "CWE-120 tại parse_webhook_signature: 1 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-7",
+      "status": "FAIL",
+      "reason": "CWE-401: 1 phát hiện (mong đợi 0); CWE-415: 1 phát hiện (mong đợi 0); CWE-416: 1 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-8",
+      "status": "FAIL",
+      "reason": "CWE-190 tại calculate_total_payment: 1 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-9",
+      "status": "PASS",
+      "reason": "Z3 UNSAT với tiền điều kiện của v1; Z3 SAT (tồn tại input gây tràn)"
+    },
+    {
+      "id": "TC-10",
+      "status": "FAIL",
+      "reason": "fuzzing: 3/3 chiến dịch tìm ra lỗi (mong đợi 0)"
+    },
+    {
+      "id": "TC-11",
+      "status": "FAIL",
+      "reason": "CWE-798: 2 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-12",
+      "status": "PASS",
+      "reason": "CWE-120 tại parse_order_id: 0 phát hiện (mong đợi 0)"
+    }
+  ]
+}

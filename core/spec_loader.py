@@ -61,11 +61,18 @@ class Specification:
     state_machine: StateMachine | None = None
     additional_flows: dict[str, StateMachine] = field(default_factory=dict)
     safety_properties: list[str] = field(default_factory=list)
-    mutual_exclusion: dict[str, str] | None = None
+    mutual_exclusion: dict[str, str] | None = None  # first pair, kept for backward compatibility
+    mutual_exclusions: list[dict[str, str]] = field(default_factory=list)
     functions: list[FunctionSpec] = field(default_factory=list)
     arithmetic_checks: list[ArithmeticCheck] = field(default_factory=list)
     test_cases: list[TestCase] = field(default_factory=list)
     source_file: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.mutual_exclusions and self.mutual_exclusion:
+            self.mutual_exclusions = [self.mutual_exclusion]
+        if self.mutual_exclusion is None and self.mutual_exclusions:
+            self.mutual_exclusion = self.mutual_exclusions[0]
 
     def summary(self) -> str:
         num_states = len(self.state_machine.states) if self.state_machine else 0
@@ -87,6 +94,16 @@ def _parse_sm_dict(data: dict[str, Any] | None) -> StateMachine | None:
         labeling={str(k): list(v) for k, v in data.get("labeling", {}).items()},
         transitions=[list(t) for t in data.get("transitions", [])],
     )
+
+
+def _mutex_pairs(value: Any) -> list[dict[str, str]]:
+    if isinstance(value, dict):
+        value = [value]
+    return [
+        {"atom1": str(p["atom1"]), "atom2": str(p["atom2"])}
+        for p in (value or [])
+        if isinstance(p, dict) and p.get("atom1") and p.get("atom2")
+    ]
 
 
 def parse_specification_json(filepath: str | Path) -> Specification:
@@ -163,7 +180,7 @@ def parse_specification_json(filepath: str | Path) -> Specification:
         state_machine=sm,
         additional_flows=flows,
         safety_properties=list(raw.get("safety_properties", [])),
-        mutual_exclusion=raw.get("mutual_exclusion"),
+        mutual_exclusions=_mutex_pairs(raw.get("mutual_exclusion")),
         functions=funcs,
         arithmetic_checks=checks,
         test_cases=tests,
@@ -238,11 +255,12 @@ def parse_specification_excel(filepath: str | Path) -> Specification:
                 if r and r[0]:
                     safety_props.append(str(r[0]).strip())
 
-    mutual_ex: dict[str, str] | None = None
+    mutual_ex: list[dict[str, str]] = []
     if "LoaiTruLanNhau" in wb.sheetnames:
         rows = list(wb["LoaiTruLanNhau"].iter_rows(values_only=True))
-        if len(rows) > 1 and rows[1] and rows[1][0] and rows[1][1]:
-            mutual_ex = {"atom1": str(rows[1][0]).strip(), "atom2": str(rows[1][1]).strip()}
+        for r in rows[1:]:
+            if r and len(r) > 1 and r[0] and r[1]:
+                mutual_ex.append({"atom1": str(r[0]).strip(), "atom2": str(r[1]).strip()})
 
     funcs: list[FunctionSpec] = []
     if "HamSinhMa" in wb.sheetnames:
@@ -332,7 +350,7 @@ def parse_specification_excel(filepath: str | Path) -> Specification:
         state_machine=sm,
         additional_flows={},
         safety_properties=safety_props,
-        mutual_exclusion=mutual_ex,
+        mutual_exclusions=mutual_ex,
         functions=funcs,
         arithmetic_checks=checks,
         test_cases=tests,

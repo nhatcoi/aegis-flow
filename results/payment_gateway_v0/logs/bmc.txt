@@ -1,0 +1,83 @@
+BMC AG(!violation): UNSAFE
+VI PHẠM tại độ sâu k=2: trạng thái 'lock_conflict' không thỏa !violation.
+Phản ví dụ: ledger_free -> webhook_holds -> lock_conflict
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (5.5 ms)
+  k=1   BMC_k unsat (19.5 ms)
+  k=2   BMC_k sat   (3.1 ms)
+  Counterexample:
+    s_0 = ledger_free
+    s_1 = webhook_holds
+    s_2 = lock_conflict
+
+BMC AG(shipped -> paid): UNSAFE
+VI PHẠM tại độ sâu k=3: trạng thái 'SHIPPED_UNPAID' không thỏa shipped -> paid.
+Phản ví dụ: CREATED -> PENDING -> UNKNOWN -> SHIPPED_UNPAID
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (0.4 ms)
+  k=1   BMC_k unsat (1.1 ms)
+  k=2   BMC_k unsat (1.4 ms)
+  k=3   BMC_k sat   (1.4 ms)
+  Counterexample:
+    s_0 = CREATED
+    s_1 = PENDING
+    s_2 = UNKNOWN
+    s_3 = SHIPPED_UNPAID
+
+BMC AG(!double_capture): UNSAFE
+VI PHẠM tại độ sâu k=3: trạng thái 'DUPLICATE_CAPTURE' không thỏa !double_capture.
+Phản ví dụ: CREATED -> PENDING -> SUCCEEDED -> DUPLICATE_CAPTURE
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (0.4 ms)
+  k=1   BMC_k unsat (0.9 ms)
+  k=2   BMC_k unsat (1.2 ms)
+  k=3   BMC_k sat   (1.5 ms)
+  Counterexample:
+    s_0 = CREATED
+    s_1 = PENDING
+    s_2 = SUCCEEDED
+    s_3 = DUPLICATE_CAPTURE
+
+BMC AG(!(processing & paid)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 3 và đã đạt completeness threshold CT=3.
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+
+BMC AG(!(webhook_locked & recon_locked)): UNSAFE
+VI PHẠM tại độ sâu k=2: trạng thái 'lock_conflict' không thỏa !(webhook_locked & recon_locked).
+Phản ví dụ: ledger_free -> webhook_holds -> lock_conflict
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (0.4 ms)
+  k=1   BMC_k unsat (0.9 ms)
+  k=2   BMC_k sat   (1.3 ms)
+  Counterexample:
+    s_0 = ledger_free
+    s_1 = webhook_holds
+    s_2 = lock_conflict
+
+BMC AG(!(violation & safe)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 3 và đã đạt completeness threshold CT=3.
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+
+BMC AG(!(paid & failed)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 3 và đã đạt completeness threshold CT=3.
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+
+BMC AG(!(timeout & paid)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 3 và đã đạt completeness threshold CT=3.
+  completeness threshold (CT) = 3, K = 3
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)

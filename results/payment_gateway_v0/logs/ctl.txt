@@ -1,0 +1,44 @@
+=== KẾT QUẢ KIỂM CHỨNG MÔ HÌNH KRIPKE: payment_gateway_v0 ===
+- Số trạng thái: 14 (Khởi tạo: ledger_free, CREATED)
+- Số chuyển tiếp: 23
+- Trạng thái không thể tới được: 0 (Không)
+- Trạng thái Deadlock: 1 (REFUNDING)
+- Tổng số thuộc tính kiểm tra: 14
+- Kết luận chung: PHÁT HIỆN LỖI / VI PHẠM (UNSAFE)
+
+Chi tiết từng thuộc tính:
+  1. [VI PHẠM - FAIL] Kiểm tra Deadlock (Bế tắc)
+     VI PHẠM: Phát hiện 1 trạng thái bế tắc (không có chuyển tiếp thoát ra): REFUNDING
+  2. [VI PHẠM - FAIL] Loại trừ lẫn nhau: AG(!(webhook_locked & recon_locked))
+     VI PHẠM: Phát hiện 1 trạng thái (lock_conflict) vừa có nhãn 'webhook_locked' vừa có nhãn 'recon_locked'.
+     Vết phản ví dụ: ledger_free -> webhook_holds -> lock_conflict
+  3. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(violation & safe))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'violation' và 'safe'.
+  4. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(processing & paid))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'processing' và 'paid'.
+  5. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(paid & failed))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'paid' và 'failed'.
+  6. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(timeout & paid))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'timeout' và 'paid'.
+  7. [VI PHẠM - FAIL] Kiểm chứng CTL: AG(!violation)
+     VI PHẠM: trạng thái khởi tạo ledger_free không thỏa AG(!violation).
+     Phản ví dụ: ledger_free -> webhook_holds -> lock_conflict
+  8. [ĐẠT - PASS] Kiểm chứng CTL: safe -> EF(webhook_locked)
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa safe -> EF(webhook_locked).
+  9. [VI PHẠM - FAIL] Kiểm chứng CTL: AG(shipped -> paid)
+     VI PHẠM: trạng thái khởi tạo CREATED không thỏa AG(shipped -> paid).
+     Phản ví dụ: CREATED -> PENDING -> UNKNOWN -> SHIPPED_UNPAID
+  10. [VI PHẠM - FAIL] Kiểm chứng CTL: AG(timeout -> AF(paid | failed))
+     VI PHẠM: trạng thái khởi tạo CREATED không thỏa AG(timeout -> AF(paid | failed)).
+     Phản ví dụ: CREATED -> PENDING -> UNKNOWN -> UNKNOWN  (lặp lại từ UNKNOWN)
+  11. [VI PHẠM - FAIL] Kiểm chứng CTL: AG(!double_capture)
+     VI PHẠM: trạng thái khởi tạo CREATED không thỏa AG(!double_capture).
+     Phản ví dụ: CREATED -> PENDING -> SUCCEEDED -> DUPLICATE_CAPTURE
+  12. [ĐẠT - PASS] Kiểm chứng CTL: AG(!(processing & paid))
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa AG(!(processing & paid)).
+  13. [ĐẠT - PASS] Kiểm chứng CTL: created -> EF(shipped)
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa created -> EF(shipped).
+  14. [VI PHẠM - FAIL] Kiểm chứng CTL: AG(refunding -> AF(refunded))
+     VI PHẠM: trạng thái khởi tạo CREATED không thỏa AG(refunding -> AF(refunded)).
+     Phản ví dụ: CREATED -> PENDING -> SUCCEEDED -> REFUNDING -> REFUNDING  (lặp lại từ REFUNDING)
+     CẢNH BÁO: Nhãn 'refunded' không xuất hiện ở bất kỳ trạng thái nào (sai chính tả?) — được coi là luôn sai.

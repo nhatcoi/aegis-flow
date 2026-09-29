@@ -1,0 +1,22 @@
+% Hình: pipeline kiểm chứng end-to-end
+\begin{tikzpicture}[node distance=4mm and 5mm, every node/.style={font=\scriptsize}]
+  \node[box,fill=black!5] (spec) {Đặc tả\\Excel 10 sheet};
+  \node[box,right=of spec] (k) {Ch.1\\Kripke + CTL};
+  \node[box,right=of k] (bmc) {Ch.3\\BMC (Z3)};
+  \node[box,below=of spec] (gen) {Sinh mã\\C v0/v1, Python};
+  \node[box,right=of gen] (scan) {Ch.2\\Scanner + ASan};
+  \node[box,right=of scan] (smt) {Ch.3\\AST + SMT};
+  \node[box,right=of smt] (fz) {Ch.4\\Fuzzing};
+  \node[box,right=of fz,fill=note!10] (cwe) {Gộp CWE/CVE\\+ bằng chứng};
+  \node[box,right=of cwe,fill=note!10] (rep) {results/\\báo cáo};
+
+  \draw[arr] (spec) -- (k);
+  \draw[arr] (k) -- (bmc);
+  \draw[arr] (spec) -- (gen);
+  \draw[arr] (gen) -- (scan);
+  \draw[arr] (scan) -- (smt);
+  \draw[arr] (smt) -- (fz);
+  \draw[arr] (fz) -- (cwe);
+  \draw[arr] (bmc) -| (cwe);
+  \draw[arr] (cwe) -- (rep);
+\end{tikzpicture}

@@ -1,0 +1,54 @@
+$ /usr/bin/clang -fsanitize=address,undefined -fno-omit-frame-pointer -g -O0 -o parse_webhook_signature_v0.bin parse_webhook_signature_v0.c parse_webhook_signature_v0_harness.c
+# input: chuỗi 520 ký tự 'A' (gấp 8 lần bộ đệm 65 byte)
+# exit code: -6
+# status: detected
+# note: LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
+
+=================================================================
+==58391==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x00016d332521 at pc 0x00010340f1cc bp 0x00016d3324b0 sp 0x00016d331c60
+WRITE of size 521 at 0x00016d332521 thread T0
+    #0 0x00010340f1c8 in strcpy+0x458 (libclang_rt.asan_osx_dynamic.dylib:arm64e+0x371c8)
+    #1 0x000102acc9a8 in parse_webhook_signature parse_webhook_signature_v0.c:9
+    #2 0x000102accc20 in main parse_webhook_signature_v0_harness.c:9
+    #3 0x000194605d50  (<unknown module>)
+
+Address 0x00016d332521 is located in stack of thread T0 at offset 97 in frame
+    #0 0x000102acc864 in parse_webhook_signature parse_webhook_signature_v0.c:7
+
+  This frame has 1 object(s):
+    [32, 97) 'buffer' (line 8) <== Memory access at offset 97 overflows this variable
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism, swapcontext or vfork
+      (longjmp and C++ exceptions *are* supported)
+SUMMARY: AddressSanitizer: stack-buffer-overflow parse_webhook_signature_v0.c:9 in parse_webhook_signature
+Shadow bytes around the buggy address:
+  0x00016d332280: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332300: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332380: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332400: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332480: 00 00 00 00 00 00 00 00 f1 f1 f1 f1 00 00 00 00
+=>0x00016d332500: 00 00 00 00[01]f3 f3 f3 f3 f3 f3 f3 00 00 00 00
+  0x00016d332580: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332600: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332680: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332700: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016d332780: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==58391==ABORTING

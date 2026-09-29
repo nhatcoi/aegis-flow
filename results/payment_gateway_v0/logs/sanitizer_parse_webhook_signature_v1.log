@@ -1,0 +1,7 @@
+$ /usr/bin/clang -fsanitize=address,undefined -fno-omit-frame-pointer -g -O0 -o parse_webhook_signature_v1.bin parse_webhook_signature_v1.c parse_webhook_signature_v1_harness.c
+# input: chuỗi 520 ký tự 'A' (gấp 8 lần bộ đệm 65 byte)
+# exit code: 0
+# status: clean
+# note: LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
+
+rc=-1

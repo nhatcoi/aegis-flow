@@ -11,3 +11,10 @@ data/
 *.zip
 *.pyc
 .DS_Store
+
+# Evidence exported by core.pipeline is part of the submission
+!results/**/*.log
+
+# Course materials (large, copyrighted) — kept locally only
+An toàn phần mềm-*_TaiLieu/
+dist/

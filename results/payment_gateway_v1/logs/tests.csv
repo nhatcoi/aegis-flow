@@ -1,0 +1,13 @@
+id,requirements,title,expected,status,reason
+TC-1,"REQ-3,REQ-4",Worker webhook và worker đối soát tranh chấp khóa sổ cái,AG(!violation) ĐÚNG và không có trạng thái deadlock,PASS,AG(!violation) = đúng (mong đợi đúng); deadlock: không
+TC-2,REQ-1,Không giao hàng khi chưa thu tiền,AG(shipped -> paid) ĐÚNG,PASS,AG(shipped -> paid) = đúng (mong đợi đúng)
+TC-3,REQ-2,Timeout luôn được đối soát,AG(timeout -> AF(paid | failed)) ĐÚNG,PASS,AG(timeout -> AF(paid | failed)) = đúng (mong đợi đúng)
+TC-4,"REQ-12,NFR-4",Cổng gửi lại webhook thu tiền,AG(!double_capture) ĐÚNG,PASS,AG(!double_capture) = đúng (mong đợi đúng)
+TC-5,REQ-13,Hoàn tiền luôn hoàn tất,AG(refunding -> AF(refunded)) ĐÚNG và không có trạng thái deadlock,PASS,AG(refunding -> AF(refunded)) = đúng (mong đợi đúng); deadlock: không
+TC-6,"REQ-5,CON-1",Chữ ký webhook dài bất thường,Không phát hiện CWE-120 tại parse_webhook_signature,PASS,CWE-120 tại parse_webhook_signature: 0 phát hiện (mong đợi 0)
+TC-7,"REQ-6,REQ-7,REQ-8",Vòng đời bộ nhớ audit log / phiên / token thẻ,"Không phát hiện CWE-401, CWE-415, CWE-416",PASS,CWE-401: 0 phát hiện (mong đợi 0); CWE-415: 0 phát hiện (mong đợi 0); CWE-416: 0 phát hiện (mong đợi 0)
+TC-8,"REQ-9,CON-4",Tổng tiền vượt int32,Không phát hiện CWE-190 tại calculate_total_payment,PASS,CWE-190 tại calculate_total_payment: 0 phát hiện (mong đợi 0)
+TC-9,REQ-9,Chứng minh tiền điều kiện chống tràn bằng Z3,Z3 SAT cho order_total_counter khi chưa kiểm tra biên và UNSAT sau khi thêm tiền điều kiện,PASS,Z3 UNSAT với tiền điều kiện của v1; Z3 SAT (tồn tại input gây tràn)
+TC-10,REQ-10,Tỷ lệ hoàn tiền với tổng tiền bằng 0,Không crash (ZeroDivisionError) tại refund_ratio,PASS,fuzzing: 0/3 chiến dịch tìm ra lỗi (mong đợi 0)
+TC-11,"REQ-11,CON-6",Tìm mã bí mật bằng concolic fuzzing,Không phát hiện CWE-798,PASS,CWE-798: 0 phát hiện (mong đợi 0)
+TC-12,"REQ-14,CON-2",Mã đơn hợp lệ không bị báo lỗi nhầm,Không phát hiện CWE-120 tại parse_order_id,PASS,CWE-120 tại parse_order_id: 0 phát hiện (mong đợi 0)

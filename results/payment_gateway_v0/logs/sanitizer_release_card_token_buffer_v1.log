@@ -1,0 +1,7 @@
+$ /usr/bin/clang -fsanitize=address,undefined -fno-omit-frame-pointer -g -O0 -o release_card_token_buffer_v1.bin release_card_token_buffer_v1.c release_card_token_buffer_v1_harness.c
+# input: gọi hàm một lần
+# exit code: 0
+# status: clean
+# note: LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
+
+rc=0

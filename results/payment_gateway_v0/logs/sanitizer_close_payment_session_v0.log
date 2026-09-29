@@ -1,0 +1,28 @@
+$ /usr/bin/clang -fsanitize=address,undefined -fno-omit-frame-pointer -g -O0 -o close_payment_session_v0.bin close_payment_session_v0.c close_payment_session_v0_harness.c
+# input: gọi hàm một lần
+# exit code: -6
+# status: detected
+# note: LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
+
+=================================================================
+==58429==ERROR: AddressSanitizer: attempting double-free on 0x6020000000d0 in thread T0:
+    #0 0x000101371424 in free+0x7c (libclang_rt.asan_osx_dynamic.dylib:arm64e+0x3d424)
+    #1 0x000100a009b0 in close_payment_session close_payment_session_v0.c:13
+    #2 0x000100a00a04 in main close_payment_session_v0_harness.c:3
+    #3 0x000194605d50  (<unknown module>)
+
+0x6020000000d0 is located 0 bytes inside of 16-byte region [0x6020000000d0,0x6020000000e0)
+freed by thread T0 here:
+    #0 0x000101371424 in free+0x7c (libclang_rt.asan_osx_dynamic.dylib:arm64e+0x3d424)
+    #1 0x000100a009a8 in close_payment_session close_payment_session_v0.c:12
+    #2 0x000100a00a04 in main close_payment_session_v0_harness.c:3
+    #3 0x000194605d50  (<unknown module>)
+
+previously allocated by thread T0 here:
+    #0 0x000101371330 in malloc+0x78 (libclang_rt.asan_osx_dynamic.dylib:arm64e+0x3d330)
+    #1 0x000100a00878 in close_payment_session close_payment_session_v0.c:8
+    #2 0x000100a00a04 in main close_payment_session_v0_harness.c:3
+    #3 0x000194605d50  (<unknown module>)
+
+SUMMARY: AddressSanitizer: double-free close_payment_session_v0.c:13 in close_payment_session
+==58429==ABORTING

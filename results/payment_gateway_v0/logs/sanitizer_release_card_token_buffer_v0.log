@@ -1,0 +1,59 @@
+$ /usr/bin/clang -fsanitize=address,undefined -fno-omit-frame-pointer -g -O0 -o release_card_token_buffer_v0.bin release_card_token_buffer_v0.c release_card_token_buffer_v0_harness.c
+# input: gọi hàm một lần
+# exit code: -6
+# status: detected
+# note: LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
+
+=================================================================
+==58448==ERROR: AddressSanitizer: heap-use-after-free on address 0x604000000350 at pc 0x00010465c99c bp 0x00016b7a25e0 sp 0x00016b7a25d8
+WRITE of size 1 at 0x604000000350 thread T0
+    #0 0x00010465c998 in release_card_token_buffer release_card_token_buffer_v0.c:12
+    #1 0x00010465c9fc in main release_card_token_buffer_v0_harness.c:3
+    #2 0x000194605d50  (<unknown module>)
+
+0x604000000350 is located 0 bytes inside of 33-byte region [0x604000000350,0x604000000371)
+freed by thread T0 here:
+    #0 0x000104fe1424 in free+0x7c (libclang_rt.asan_osx_dynamic.dylib:arm64e+0x3d424)
+    #1 0x00010465c8b4 in release_card_token_buffer release_card_token_buffer_v0.c:11
+    #2 0x00010465c9fc in main release_card_token_buffer_v0_harness.c:3
+    #3 0x000194605d50  (<unknown module>)
+
+previously allocated by thread T0 here:
+    #0 0x000104fe1330 in malloc+0x78 (libclang_rt.asan_osx_dynamic.dylib:arm64e+0x3d330)
+    #1 0x00010465c878 in release_card_token_buffer release_card_token_buffer_v0.c:8
+    #2 0x00010465c9fc in main release_card_token_buffer_v0_harness.c:3
+    #3 0x000194605d50  (<unknown module>)
+
+SUMMARY: AddressSanitizer: heap-use-after-free release_card_token_buffer_v0.c:12 in release_card_token_buffer
+Shadow bytes around the buggy address:
+  0x604000000080: fa fa 00 00 00 00 00 00 fa fa 00 00 00 00 00 00
+  0x604000000100: fa fa 00 00 00 00 00 00 fa fa 00 00 00 00 00 00
+  0x604000000180: fa fa 00 00 00 00 00 05 fa fa 00 00 00 00 00 00
+  0x604000000200: fa fa 00 00 00 00 00 05 fa fa 00 00 00 00 00 00
+  0x604000000280: fa fa 00 00 00 00 00 07 fa fa 00 00 00 00 00 00
+=>0x604000000300: fa fa 00 00 00 00 00 00 fa fa[fd]fd fd fd fd fa
+  0x604000000380: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x604000000400: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x604000000480: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x604000000500: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x604000000580: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==58448==ABORTING

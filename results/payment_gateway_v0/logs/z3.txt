@@ -1,0 +1,53 @@
+=== KIỂM TRA SMT / SỐ HỌC (Z3): order_total_counter ===
+- Miền biến: mọi biến amount, shipping_fee ∈ [-2147483648, 2147483647] (int32)
+- Điều kiện nghiệp vụ: `amount >= 0 and shipping_fee >= 0 and amount + shipping_fee > 2000000000`
+  -> SAT, ví dụ: {'amount': 2000000001, 'shipping_fee': 0}
+- Biểu thức: `amount + shipping_fee`
+  -> SAT [CWE-190]: có thể TRÀN int32 (thỏa cả điều kiện nghiệp vụ). Model: {'amount': 2147483647, 'shipping_fee': 1}, giá trị đúng = 2147483648
+  -> Bit-vector 32-bit (C thật): {'amount': 1073758211, 'shipping_fee': 1074004237} cho kết quả wrap-around = -2147204848
+- Sau vá (v1 từ chối khi `(shipping_fee > 0 and amount > INT_MAX - shipping_fee) or (shipping_fee < 0 and amount < INT_MIN - shipping_fee)`): UNSAT — bản vá loại bỏ hoàn toàn tràn số
+
+=== KIỂM TRA SMT / SỐ HỌC (Z3): daily_transaction_counter ===
+- Miền biến: mọi biến tx_today, tx_backlog ∈ [-2147483648, 2147483647] (int32)
+- Điều kiện nghiệp vụ: `tx_today >= 0 and tx_backlog >= 0 and tx_today + tx_backlog > 32767`
+  -> SAT, ví dụ: {'tx_today': 32768, 'tx_backlog': 0}
+- Biểu thức: `tx_today + tx_backlog`
+  -> SAT [CWE-190]: có thể TRÀN int32 (thỏa cả điều kiện nghiệp vụ). Model: {'tx_today': 2147483647, 'tx_backlog': 1}, giá trị đúng = 2147483648
+  -> Bit-vector 32-bit (C thật): {'tx_today': 1073758669, 'tx_backlog': 1091568162} cho kết quả wrap-around = -2129640465
+- Sau vá (v1 từ chối khi `(tx_backlog > 0 and tx_today > INT_MAX - tx_backlog) or (tx_backlog < 0 and tx_today < INT_MIN - tx_backlog)`): UNSAT — bản vá loại bỏ hoàn toàn tràn số
+
+=== KIỂM TRA SMT / SỐ HỌC (Z3): active_session_counter ===
+- Miền biến: mọi biến active_sessions, pending_sessions ∈ [-2147483648, 2147483647] (int32)
+- Điều kiện nghiệp vụ: `active_sessions >= 0 and pending_sessions >= 0 and active_sessions + pending_sessions > 65535`
+  -> SAT, ví dụ: {'active_sessions': 65536, 'pending_sessions': 0}
+- Biểu thức: `active_sessions + pending_sessions`
+  -> SAT [CWE-190]: có thể TRÀN int32 (thỏa cả điều kiện nghiệp vụ). Model: {'active_sessions': 2147483647, 'pending_sessions': 1}, giá trị đúng = 2147483648
+  -> Bit-vector 32-bit (C thật): {'active_sessions': 126353425, 'pending_sessions': 2022770840} cho kết quả wrap-around = -2145843031
+- Sau vá (v1 từ chối khi `(pending_sessions > 0 and active_sessions > INT_MAX - pending_sessions) or (pending_sessions < 0 and active_sessions < INT_MIN - pending_sessions)`): UNSAT — bản vá loại bỏ hoàn toàn tràn số
+
+=== KIỂM TRA SMT / SỐ HỌC (Z3): refund_total_vnd ===
+- Miền biến: mọi biến refunded_vnd, pending_refund_vnd ∈ [-2147483648, 2147483647] (int32)
+- Điều kiện nghiệp vụ: `refunded_vnd >= 0 and pending_refund_vnd >= 0 and refunded_vnd + pending_refund_vnd > 2000000000`
+  -> SAT, ví dụ: {'refunded_vnd': 2000000001, 'pending_refund_vnd': 0}
+- Biểu thức: `refunded_vnd + pending_refund_vnd`
+  -> SAT [CWE-190]: có thể TRÀN int32 (thỏa cả điều kiện nghiệp vụ). Model: {'refunded_vnd': 2147483647, 'pending_refund_vnd': 1}, giá trị đúng = 2147483648
+  -> Bit-vector 32-bit (C thật): {'refunded_vnd': 1245708304, 'pending_refund_vnd': 905973761} cho kết quả wrap-around = -2143285231
+- Sau vá (v1 từ chối khi `(pending_refund_vnd > 0 and refunded_vnd > INT_MAX - pending_refund_vnd) or (pending_refund_vnd < 0 and refunded_vnd < INT_MIN - pending_refund_vnd)`): UNSAT — bản vá loại bỏ hoàn toàn tràn số
+
+=== KIỂM TRA SMT / SỐ HỌC (Z3): webhook_retry_counter ===
+- Miền biến: mọi biến retries_today, retries_backlog ∈ [-2147483648, 2147483647] (int32)
+- Điều kiện nghiệp vụ: `retries_today >= 0 and retries_backlog >= 0 and retries_today + retries_backlog > 32767`
+  -> SAT, ví dụ: {'retries_today': 32768, 'retries_backlog': 0}
+- Biểu thức: `retries_today + retries_backlog`
+  -> SAT [CWE-190]: có thể TRÀN int32 (thỏa cả điều kiện nghiệp vụ). Model: {'retries_today': 2147483647, 'retries_backlog': 1}, giá trị đúng = 2147483648
+  -> Bit-vector 32-bit (C thật): {'retries_today': 538968385, 'retries_backlog': 1644433431} cho kết quả wrap-around = -2111565480
+- Sau vá (v1 từ chối khi `(retries_backlog > 0 and retries_today > INT_MAX - retries_backlog) or (retries_backlog < 0 and retries_today < INT_MIN - retries_backlog)`): UNSAT — bản vá loại bỏ hoàn toàn tràn số
+
+=== KIỂM TRA SMT / SỐ HỌC (Z3): settlement_batch_bytes ===
+- Miền biến: mọi biến batch_bytes, header_bytes ∈ [-2147483648, 2147483647] (int32)
+- Điều kiện nghiệp vụ: `batch_bytes >= 0 and header_bytes >= 0 and batch_bytes + header_bytes > 2000000000`
+  -> SAT, ví dụ: {'batch_bytes': 2000000001, 'header_bytes': 0}
+- Biểu thức: `batch_bytes + header_bytes`
+  -> SAT [CWE-190]: có thể TRÀN int32 (thỏa cả điều kiện nghiệp vụ). Model: {'batch_bytes': 2147483647, 'header_bytes': 1}, giá trị đúng = 2147483648
+  -> Bit-vector 32-bit (C thật): {'batch_bytes': 126353408, 'header_bytes': 2022842372} cho kết quả wrap-around = -2145771516
+- Sau vá (v1 từ chối khi `(header_bytes > 0 and batch_bytes > INT_MAX - header_bytes) or (header_bytes < 0 and batch_bytes < INT_MIN - header_bytes)`): UNSAT — bản vá loại bỏ hoàn toàn tràn số

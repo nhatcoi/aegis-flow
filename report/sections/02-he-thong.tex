@@ -1,0 +1,116 @@
+\chapter{Mô tả hệ thống mục tiêu}
+\label{ch:hethong}
+
+\section{Chức năng và luồng xử lý}
+Đơn hàng được tạo (\code{CREATED}), chuyển sang chờ cổng thanh toán (\code{PENDING}). Cổng có
+thể xác nhận thu tiền (\code{SUCCEEDED}), báo thất bại (\code{FAILED}) hoặc không phản hồi
+(\code{UNKNOWN} — timeout); đơn timeout phải được đối soát (\code{RECONCILING}) để biết kết
+quả thật. Chỉ đơn đã thu tiền mới được giao (\code{SHIPPED}) hoặc hoàn tiền
+(\code{REFUNDING} $\rightarrow$ \code{REFUNDED}). Song song, worker xử lý webhook và worker
+đối soát cùng ghi vào sổ cái, được bảo vệ bởi một khóa. Kết quả từ cổng về qua
+\emph{webhook} — điểm nhận dữ liệu từ bên ngoài quan trọng nhất (Hình~\ref{fig:kientruc}).
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\linewidth}{!}{\input{figures/kien-truc}}
+  \caption{Kiến trúc luồng thanh toán; đường đỏ là dữ liệu vượt trust boundary.}
+  \label{fig:kientruc}
+\end{figure}
+
+\section{Bề mặt tấn công (attack surface)}
+\begin{table}[H]
+\centering\small
+\caption{Các điểm nhận dữ liệu từ bên ngoài và rủi ro tương ứng.}
+\label{tab:attacksurface}
+\begin{tabularx}{\linewidth}{@{}l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X l@{}}
+\toprule
+Điểm vào & Dữ liệu & Hàm xử lý & Rủi ro \\
+\midrule
+Webhook & Chữ ký HMAC-SHA256 (64 ký tự hex) & \code{parse\_webhook\_signature} & CWE-120 \\
+Webhook & Header token & \code{webhook\_bypass\_token} & CWE-798 \\
+API hỗ trợ viên & Mã PIN ghi đè & \code{support\_override\_pin} & CWE-798 \\
+Tạo đơn & Mã đơn hàng (20 ký tự) & \code{parse\_order\_id} & CWE-120 \\
+Webhook & Số tiền, phí vận chuyển & \code{calculate\_total\_payment} & CWE-190 \\
+API hoàn tiền & Số tiền hoàn, tổng tiền & \code{refund\_ratio} & CWE-369 \\
+Nội bộ & Bản ghi audit, phiên, token thẻ & \code{write\_audit\_log}, \code{close\_payment\_session}, \code{release\_card\_token\_buffer} & CWE-401/415/416 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Mô hình mối đe dọa (STRIDE)}
+\begin{table}[H]
+\centering\small
+\caption{Phân tích STRIDE cho luồng thanh toán.}
+\label{tab:stride}
+\begin{tabularx}{\linewidth}{@{}l X l l@{}}
+\toprule
+Mối đe dọa & Kịch bản & Thuộc tính bị vi phạm & Yêu cầu \\
+\midrule
+Spoofing & Gửi webhook giả ``thanh toán thành công'' bằng token bí mật & Authenticity & REQ-11 \\
+Tampering & Sửa số tiền trong payload làm tổng bị tràn số & Integrity & REQ-9 \\
+Repudiation & Mất bản ghi audit khi worker crash & Non-repudiation & NFR-3 \\
+Info.\ Disclosure & Tràn bộ đệm chữ ký làm lộ dữ liệu stack & Confidentiality & REQ-5 \\
+Denial of Service & Đơn treo mãi ở trạng thái timeout; hoàn tiền không kết thúc & Availability & REQ-2, REQ-13 \\
+Elevation of Priv. & PIN ghi đè hardcode của hỗ trợ viên & Authorization & REQ-11 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Đặc tả yêu cầu}
+Đặc tả viết theo template Excel 10 sheet của học phần và được sinh tái lập bằng
+\code{scripts/build\_payment\_specs.py} thành hai file
+\code{payment\_gateway\_v0\_spec.xlsx} và \code{payment\_gateway\_v1\_spec.xlsx} trong thư mục
+\code{dataset/specs\_excel/}.
+Hai phiên bản dùng chung yêu cầu, thuộc tính và test case; chỉ khác sheet
+\code{MoHinhTrangThai} và cột \code{Loi} của \code{HamSinhMa}.
+
+\begin{table}[H]
+\centering\small
+\caption{Yêu cầu trong sheet \code{YeuCauChucNang} (rút gọn).}
+\label{tab:req}
+\begin{tabularx}{\linewidth}{@{}l l l X@{}}
+\toprule
+ID & Danh mục & Ưu tiên & Nội dung \\
+\midrule
+REQ-1 & safety & HIGH & Chỉ giao hàng khi đơn đã được xác nhận thu tiền \\
+REQ-2 & liveness & HIGH & Đơn timeout cuối cùng phải được đối soát xong \\
+REQ-3 & safety & HIGH & Hai worker không đồng thời giữ khóa sổ cái \\
+REQ-4 & liveness & HIGH & Không deadlock khi tranh chấp khóa hoặc khi hoàn tiền \\
+REQ-5 & memory & HIGH & \code{parse\_webhook\_signature} không tràn bộ đệm \\
+REQ-6 & memory & MEDIUM & \code{write\_audit\_log} giải phóng bộ nhớ mỗi bản ghi \\
+REQ-7 & memory & HIGH & \code{close\_payment\_session} không free hai lần \\
+REQ-8 & memory & HIGH & \code{release\_card\_token\_buffer} không dùng sau khi free \\
+REQ-9 & safety & HIGH & Tổng tiền hàng + phí không tràn int32 \\
+REQ-10 & functional & MEDIUM & \code{refund\_ratio} không lỗi khi tổng tiền bằng 0 \\
+REQ-11 & safety & HIGH & Không có mã bí mật hardcode vượt qua xác thực \\
+REQ-12 & safety & HIGH & Không ghi nhận thu tiền hai lần khi webhook bị gửi lại \\
+REQ-13 & liveness & MEDIUM & Mọi yêu cầu hoàn tiền cuối cùng phải hoàn tất \\
+REQ-14 & memory & MEDIUM & \code{parse\_order\_id} chỉ nhận mã đơn đúng độ dài \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\centering\small
+\caption{Quy mô đặc tả (v0 / v1).}
+\label{tab:quymo}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Thành phần & Số lượng \\
+\midrule
+Yêu cầu chức năng / phi chức năng / ràng buộc & 14 / 6 / 6 \\
+Trạng thái / chuyển tiếp của mô hình Kripke & 14 / 23 \quad (v1: 12 / 18) \\
+Công thức CTL / cặp loại trừ lẫn nhau & 8 / 5 \\
+Hàm sinh mã (C / Python) & 6 / 3 \\
+Kiểm tra số học (Z3) & 6 \\
+Test case truy vết & 12 \\
+Số dòng mã C sinh ra (v0 + v1) & 338 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Đặc tả đáp ứng checklist của Hướng dẫn tạo spec Excel: đủ 10 sheet, mỗi sheet dạng bảng
+$\geq 5$ dòng, phủ 4 danh mục yêu cầu, có cụm khóa \code{free/holds/conflict} với nhãn
+\code{violation}, công thức sống còn dạng $\mathbf{AG}(p \rightarrow \mathbf{AF}\,q)$, đủ 4 loại
+lỗi bộ nhớ C cùng hai loại hàm Python \code{divide} và \code{magic\_value}; kích thước bộ đệm
+khớp các ràng buộc CON-1 đến CON-3.

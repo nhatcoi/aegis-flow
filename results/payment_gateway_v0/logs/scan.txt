@@ -1,0 +1,16 @@
+== parse_webhook_signature_v0.c: 1 finding
+  parse_webhook_signature_v0.c:9: [HIGH] dangerous-function CWE-120: Gọi 'strcpy()' không giới hạn kích thước đích — dùng strnlen + memcpy.
+== parse_webhook_signature_v1.c: 0 finding
+== parse_order_id_v0.c: 0 finding
+== parse_order_id_v1.c: 0 finding
+== write_audit_log_v0.c: 1 finding
+  write_audit_log_v0.c:12: [MEDIUM] memory-leak CWE-401: 'data' cấp phát tại dòng 8 không được free() trước khi thoát hàm.
+== write_audit_log_v1.c: 0 finding
+== close_payment_session_v0.c: 1 finding
+  close_payment_session_v0.c:13: [HIGH] double-free CWE-415: free('data') lần hai (đã free() tại dòng 12).
+== close_payment_session_v1.c: 0 finding
+== release_card_token_buffer_v0.c: 1 finding
+  release_card_token_buffer_v0.c:12: [HIGH] use-after-free CWE-416: Dùng 'data' sau khi đã free() tại dòng 11.
+== release_card_token_buffer_v1.c: 0 finding
+== calculate_total_payment_v0.c: 0 finding
+== calculate_total_payment_v1.c: 0 finding

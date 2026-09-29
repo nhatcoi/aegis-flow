@@ -1,0 +1,138 @@
+\chapter{Phương pháp thực hiện}
+\label{ch:phuongphap}
+
+Toàn bộ quy trình được tự động hóa trong một pipeline (Hình~\ref{fig:pipeline}), chạy lại
+được bằng một lệnh với seed cố định; giao diện desktop gọi đúng pipeline này:
+\begin{lstlisting}[language=bash,numbers=none]
+uv run python -m core.pipeline dataset/specs_excel/payment_gateway_v0_spec.xlsx \
+    --compare dataset/specs_excel/payment_gateway_v1_spec.xlsx --seed 1 --budget 2000
+\end{lstlisting}
+
+\begin{figure}[H]
+  \centering
+  \resizebox{\linewidth}{!}{\input{figures/pipeline}}
+  \caption{Pipeline kiểm chứng end-to-end từ đặc tả tới báo cáo CWE.}
+  \label{fig:pipeline}
+\end{figure}
+
+% ------------------------------------------------------------
+\section{Chương 1 — Mô hình Kripke và kiểm chứng CTL}
+\textbf{Lý do chọn:} REQ-1 đến REQ-4, REQ-12, REQ-13 là thuộc tính về \emph{thứ tự trạng thái},
+không kiểm tra được bằng một test case đơn lẻ mà cần xét \emph{mọi} đường thực thi.
+
+\textbf{Cách áp dụng:} mỗi dòng sheet \code{MoHinhTrangThai} là một trạng thái $s \in S$, cột
+\code{KhoiTao} xác định $S_0$, cột \code{Nhan} xác định $L(s) \subseteq AP$, cột
+\code{ChuyenDenCacTrangThai} sinh $R$. Mô hình gồm hai cụm độc lập: cụm khóa sổ cái
+(\code{ledger\_free}, \code{webhook\_holds}, \code{recon\_holds}, \code{lock\_conflict}) và vòng
+đời thanh toán. Module \code{core/ctl.py} parse công thức thành cây cú pháp (hỗ trợ lồng toán tử
+và $\neg, \wedge, \vee, \rightarrow$) rồi kiểm tra bằng thuật toán gán nhãn: $\mathbf{EX}$,
+$\mathbf{EU}$, $\mathbf{EG}$ tính bằng điểm bất động, các toán tử còn lại suy ra từ chúng.
+Công thức đúng khi mọi trạng thái khởi tạo thỏa nó; khi sai, công cụ sinh phản ví dụ — đường
+đi ngắn nhất tới trạng thái vi phạm với $\mathbf{AG}$, hoặc đường lặp vô hạn (lasso) với
+$\mathbf{AF}$. Công thức sai cú pháp bị báo \emph{lỗi} chứ không bị coi là đạt.
+
+\begin{table}[H]
+\centering\small
+\caption{Thuộc tính CTL và truy vết tới yêu cầu.}
+\label{tab:ctlprops}
+\begin{tabularx}{\linewidth}{@{}l X l l@{}}
+\toprule
+\# & Công thức & Loại & Yêu cầu \\
+\midrule
+P1 & $\mathbf{AG}\,\neg\mathit{violation}$ & Safety (mutex) & REQ-3 \\
+P2 & $\mathit{safe} \rightarrow \mathbf{EF}\,\mathit{webhook\_locked}$ & Khả đạt & — \\
+P3 & $\mathbf{AG}(\mathit{shipped} \rightarrow \mathit{paid})$ & Safety & REQ-1 \\
+P4 & $\mathbf{AG}(\mathit{timeout} \rightarrow \mathbf{AF}(\mathit{paid} \vee \mathit{failed}))$ & Liveness & REQ-2 \\
+P5 & $\mathbf{AG}\,\neg\mathit{double\_capture}$ & Safety & REQ-12 \\
+P6 & $\mathbf{AG}\,\neg(\mathit{processing} \wedge \mathit{paid})$ & Safety & — \\
+P7 & $\mathit{created} \rightarrow \mathbf{EF}\,\mathit{shipped}$ & Khả đạt & — \\
+P8 & $\mathbf{AG}(\mathit{refunding} \rightarrow \mathbf{AF}\,\mathit{refunded})$ & Liveness & REQ-13 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+P2 và P7 được viết dạng kéo theo vì mô hình có hai trạng thái khởi tạo thuộc hai cụm độc lập:
+$\mathbf{EF}\,\mathit{webhook\_locked}$ viết trần sẽ sai tại \code{CREATED} dù cụm khóa hoàn
+toàn bình thường. Ngoài ra công cụ kiểm tra deadlock (trạng thái đạt được không có chuyển tiếp
+ra, CWE-833) và cả 5 cặp mệnh đề trong sheet \code{LoaiTruLanNhau}.
+
+% ------------------------------------------------------------
+\section{Chương 3 — Bounded Model Checking bằng Z3}
+\textbf{Lý do chọn:} duyệt tập trạng thái cho kết luận đúng/sai; BMC bổ sung đường phản ví dụ
+có \emph{độ dài tối thiểu} và làm rõ khác biệt giữa ``an toàn đến độ sâu $k$'' và ``an toàn''.
+
+\textbf{Mã hóa:} với mọi thuộc tính dạng $\mathbf{AG}\,\varphi$ ($\varphi$ không chứa toán tử
+thời gian) và mọi cặp loại trừ lẫn nhau, $\mathit{bad} = S \setminus \mathit{sat}(\varphi)$ và
+\begin{equation}
+  \mathit{BMC}_k \;=\; I(s_0) \;\wedge\; \bigwedge_{i=0}^{k-1} R(s_i,s_{i+1}) \;\wedge\; \bigvee_{i=0}^{k} \mathit{bad}(s_i)
+\end{equation}
+trong đó mỗi $s_i$ là một biến nguyên Z3 mang chỉ số trạng thái (\code{core/bmc.py}). Chạy
+$k = 0, 1, \ldots, CT$; nếu $\mathit{BMC}_k$ SAT thì model của Z3 là phản ví dụ.
+Completeness threshold $CT$ lấy bằng đường kính khả đạt (BFS từ $S_0$): mọi trạng thái đạt được
+đều đạt được trong $\leq CT$ bước, nên không vi phạm với mọi $k \le CT$ nghĩa là thuộc tính
+đúng trên mọi độ dài. Mô hình v0 có $CT = 3$, mô hình v1 có $CT = 4$ (thêm trạng thái \code{REFUNDED}).
+
+% ------------------------------------------------------------
+\section{Chương 2 — Phân tích an toàn bộ nhớ trên mã C}
+\textbf{Lý do chọn:} các hàm C xử lý dữ liệu webhook và vòng đời phiên nằm trên attack surface
+(Bảng~\ref{tab:attacksurface}); lỗi bộ nhớ ở đây có mức rủi ro \emph{Nghiêm trọng} theo ma
+trận rủi ro Chương~2.1.
+
+Mỗi hàm được sinh hai bản cùng chữ ký: \code{*\_v0.c} chứa lỗi khai báo, \code{*\_v1.c} là
+bản vá. Hai lớp phân tích bổ sung cho nhau:
+\begin{enumerate}
+  \item \textbf{Phân tích tĩnh} (\code{core/c\_analyzer.py}): bỏ chú thích và chuỗi, tách từng
+        hàm, duyệt theo thứ tự câu lệnh và theo dõi vòng đời từng con trỏ heap (cấp phát
+        $\rightarrow$ kiểm tra NULL $\rightarrow$ giải phóng). Luật: hàm nguy hiểm
+        (\code{strcpy}, \code{sprintf}, \code{gets}), chuỗi định dạng từ biến, \code{malloc}
+        không kiểm tra NULL, kích thước cấp phát là tích, free hai lần, dùng sau free, thoát
+        hàm hoặc gán lại con trỏ khi chưa free.
+  \item \textbf{Phân tích động} (\code{core/toolchain.py}): sinh harness \code{main()} cho từng
+        hàm, biên dịch v0 và v1 bằng \code{clang -fsanitize=address,undefined -g -O0} và chạy
+        với input độc hại: chuỗi dài gấp 8 lần bộ đệm (520 ký tự cho chữ ký), gọi hàm vòng đời
+        bộ nhớ, và cặp \code{(INT\_MAX, 1)} cho hàm cộng.
+\end{enumerate}
+
+% ------------------------------------------------------------
+\section{Chương 3 — Trích xuất AST và kiểm chứng SMT}
+\textbf{AST} (\code{core/static\_ast.py}): với mỗi hàm và mỗi phiên bản, trích biến, điều kiện
+rẽ nhánh, vòng lặp, độ phức tạp McCabe $V(G) = $ số quyết định $+ 1$ và độ sâu lồng nhau;
+điều kiện rẽ nhánh của hàm Python được dùng lại cho concolic fuzzing.
+
+\textbf{SMT} (\code{core/arithmetic\_z3.py}): mỗi dòng sheet \code{KiemTraSoHoc} sinh bốn truy
+vấn Z3, với mọi biến ràng buộc trong miền int32:
+\begin{enumerate}
+  \item tính thỏa được của điều kiện nghiệp vụ (ngưỡng chọn theo bảng int16 / uint16 / int32 của
+        hướng dẫn);
+  \item giá trị đúng của biểu thức có thể vượt miền int32 hay không (lý thuyết số nguyên);
+  \item kết quả mà một \code{int} 32-bit của C thực sự tính ra — lý thuyết \emph{bit-vector}, so
+        sánh kết quả 32-bit với phép tính mở rộng 64-bit để lộ wrap-around;
+  \item thêm tiền điều kiện của bản vá (\code{b > 0 \&\& a > INT\_MAX - b} $\ldots$) và chứng
+        minh không còn input nào gây tràn (mong đợi UNSAT).
+\end{enumerate}
+
+% ------------------------------------------------------------
+\section{Chương 4 — Fuzzing}
+Ba hàm Python được fuzz trên cả v0 và v1 với cùng ngân sách 2\,000 lần thử, seed $=1$, input
+ban đầu $(1, 1)$ (vô hại, để lỗi phải được \emph{khám phá}):
+\begin{itemize}
+  \item \code{refund\_ratio(refund\_amount, total\_amount)} — lỗi ``nông'' (chia cho 0);
+  \item \code{webhook\_bypass\_token}, \code{support\_override\_pin} — nhánh vượt qua xác thực
+        chỉ đạt được khi hai tham số bằng đúng cặp giá trị bí mật.
+\end{itemize}
+Ba chiến lược (\code{core/fuzzing.py}): \textbf{black-box} (số nguyên int32 ngẫu nhiên, 30\%
+lấy từ tập giá trị biên), \textbf{coverage-guided} (đo line coverage bằng
+\code{sys.settrace}, đột biến bit flip / số học / giá trị biên / havoc / splice, chỉ giữ input
+mở thêm dòng mới — hill climbing), và \textbf{concolic} (chạy cụ thể đồng thời thu path condition
+dạng Z3 từ AST, phủ định lần lượt từng tiền tố để sinh input mới; phép chia được coi là nhánh
+ngầm $\mathit{divisor} \neq 0$). Oracle: ngoại lệ bất kỳ là crash (CWE-369 với chia cho 0);
+với hàm mã bí mật, trả về \code{True} là đã vượt qua xác thực (CWE-798). Mã sinh ra chỉ được
+chạy sau khi kiểm tra AST chỉ chứa tập cú pháp an toàn.
+
+% ------------------------------------------------------------
+\section{Gộp kết quả, ánh xạ CWE và đánh giá test case}
+Mọi phát hiện được chuẩn hóa thành bản ghi gồm: mã CWE (theo bảng ánh xạ của hướng dẫn: mutex
+$\rightarrow$ CWE-667, vi phạm CTL $\rightarrow$ CWE-693, deadlock $\rightarrow$ CWE-833, \ldots),
+vị trí, công cụ, bằng chứng v0 và bằng chứng v1. Bản vá được coi là \emph{đã xác minh} chỉ khi
+scanner v1 cho 0 finding, sanitizer v1 sạch và fuzzing v1 không tìm ra lỗi. Mỗi test case được
+đánh giá tự động PASS/FAIL từ câu ``kết quả mong đợi'' khi câu đó nêu tiêu chí kiểm tra được
+(một mã CWE tại một hàm, một công thức CTL kèm ĐÚNG/SAI, SAT/UNSAT, crash, \ldots).

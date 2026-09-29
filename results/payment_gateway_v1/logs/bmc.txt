@@ -1,0 +1,71 @@
+BMC AG(!violation): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)
+
+BMC AG(shipped -> paid): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)
+
+BMC AG(!double_capture): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)
+
+BMC AG(!(processing & paid)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)
+
+BMC AG(!(webhook_locked & recon_locked)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)
+
+BMC AG(!(violation & safe)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)
+
+BMC AG(!(paid & failed)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)
+
+BMC AG(!(timeout & paid)): SAFE_COMPLETE
+AN TOÀN: không có vi phạm với mọi k ≤ 4 và đã đạt completeness threshold CT=4.
+  completeness threshold (CT) = 4, K = 4
+  k=0   BMC_k unsat (0.0 ms)
+  k=1   BMC_k unsat (0.0 ms)
+  k=2   BMC_k unsat (0.0 ms)
+  k=3   BMC_k unsat (0.0 ms)
+  k=4   BMC_k unsat (0.0 ms)

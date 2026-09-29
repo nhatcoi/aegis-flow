@@ -1,0 +1,14 @@
+{
+  "parse_webhook_signature/v0": [],
+  "parse_webhook_signature/v1": [],
+  "parse_order_id/v0": [],
+  "parse_order_id/v1": [],
+  "write_audit_log/v0": [],
+  "write_audit_log/v1": [],
+  "close_payment_session/v0": [],
+  "close_payment_session/v1": [],
+  "release_card_token_buffer/v0": [],
+  "release_card_token_buffer/v1": [],
+  "calculate_total_payment/v0": [],
+  "calculate_total_payment/v1": []
+}

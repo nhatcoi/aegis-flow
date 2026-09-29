@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +20,13 @@ class SMTCheckResult:
     overflow_values: dict[str, int] = field(default_factory=dict)
     overflow_evaluated: int | None = None
     details: str = ""
+    status: str = ""  # "overflow" | "safe" | "error"
+    bv_overflow: bool = False
+    bv_values: dict[str, int | None] = field(default_factory=dict)
+    wrapped_value: int | None = None
+    patch_guard: str | None = None
+    patch_status: str = "n/a"  # "unsat" (patch proven) | "sat" | "n/a"
+    overflow_under_condition: bool = False
 
 
 INT32_MIN = -2147483648
@@ -32,10 +40,13 @@ def _ast_to_z3(node: ast.AST, env: dict[str, z3.ArithRef]) -> Any:
         raise ValueError(f"Biến không xác định trong biểu thức SMT: {node.id}")
 
     elif isinstance(node, ast.Constant):
-        if isinstance(node.value, int):
-            return z3.IntVal(node.value)
-        elif isinstance(node.value, bool):
+        if isinstance(node.value, bool):
             return z3.BoolVal(node.value)
+        if isinstance(node.value, int):
+            sample = next(iter(env.values()), None)
+            if isinstance(sample, z3.BitVecRef):
+                return z3.BitVecVal(node.value, sample.size())
+            return z3.IntVal(node.value)
         raise ValueError(f"Hằng số không được hỗ trợ: {node.value}")
 
     elif isinstance(node, ast.UnaryOp):
@@ -95,110 +106,130 @@ def parse_to_z3(expr_str: str, env: dict[str, z3.ArithRef]) -> Any:
     return _ast_to_z3(tree.body, env)
 
 
+def _int(v: Any) -> int | None:
+    try:
+        return int(str(v))
+    except ValueError:
+        return None
+
+
+def _bv_int(v: Any) -> int | None:
+    return v.as_signed_long() if isinstance(v, z3.BitVecNumRef) else None
+
+
+def _int32_bounds(env: dict[str, z3.ArithRef]) -> list[Any]:
+    return [z3.And(x >= INT32_MIN, x <= INT32_MAX) for x in env.values()]
+
+
+def patch_guard(expr: str) -> str | None:
+    """C guard that v1 uses to reject overflowing `a + b` / `a - b` (see core.codegen)."""
+    m = re.fullmatch(r"\s*([A-Za-z_]\w*)\s*([+-])\s*([A-Za-z_]\w*)\s*", expr or "")
+    if not m:
+        return None
+    a, op, b = m.groups()
+    if op == "+":
+        return f"({b} > 0 and {a} > INT_MAX - {b}) or ({b} < 0 and {a} < INT_MIN - {b})"
+    return f"({b} < 0 and {a} > INT_MAX + {b}) or ({b} > 0 and {a} < INT_MIN + {b})"
+
+
 def check_arithmetic_spec(check: ArithmeticCheck) -> SMTCheckResult:
-    # Build Z3 environment
     env = {v: z3.Int(v) for v in check.int_vars}
+    bounds = _int32_bounds(env)
+    result = SMTCheckResult(name=check.name, condition_sat=True, overflow_possible=False)
 
-    # 1. Check condition satisfiability
-    cond_sat = False
-    model_vals: dict[str, int] = {}
+    try:
+        cond = parse_to_z3(check.condition, env) if check.condition else None
+        expr = parse_to_z3(check.overflow_expr, env) if check.overflow_expr else None
+    except Exception as e:  # noqa: BLE001 - surface any parse problem to the user
+        result.condition_sat = False
+        result.details = f"Lỗi phân tích cú pháp biểu thức: {e}"
+        result.status = "error"
+        return result
 
-    solver = z3.Solver()
-    if check.condition:
-        try:
-            z3_cond = parse_to_z3(check.condition, env)
-            solver.add(z3_cond)
+    # 1. Business condition (with every variable restricted to int32)
+    if cond is not None:
+        solver = z3.Solver()
+        solver.add(*bounds, cond)
+        result.condition_sat = solver.check() == z3.sat
+        if result.condition_sat:
+            m = solver.model()
+            result.model_values = {v: _int(m.eval(env[v], model_completion=True)) for v in check.int_vars}
+
+    # 2. Mathematical overflow: exact value outside int32 while inputs are int32
+    if expr is not None:
+        overflow = z3.Or(expr > INT32_MAX, expr < INT32_MIN)
+        solver = z3.Solver()
+        solver.add(*bounds, overflow)
+        if cond is not None and result.condition_sat:
+            solver.push()
+            solver.add(cond)  # prefer a witness that also satisfies the business condition
             if solver.check() == z3.sat:
-                cond_sat = True
-                m = solver.model()
-                for v in check.int_vars:
-                    val = m.eval(env[v])
-                    if val is not None:
-                        try:
-                            model_vals[v] = int(str(val))
-                        except ValueError:
-                            pass
-        except Exception as e:
-            return SMTCheckResult(
-                name=check.name,
-                condition_sat=False,
-                overflow_possible=False,
-                details=f"Lỗi phân tích cú pháp biểu thức điều kiện: {e}",
-            )
-    else:
-        cond_sat = True
+                result.overflow_under_condition = True
+            else:
+                solver.pop()
+        if solver.check() == z3.sat:
+            m = solver.model()
+            result.overflow_possible = True
+            result.overflow_values = {v: _int(m.eval(env[v], model_completion=True)) for v in check.int_vars}
+            result.overflow_evaluated = _int(m.eval(expr))
 
-    # 2. Check 32-bit Integer Overflow
-    overflow_possible = False
-    overflow_vals: dict[str, int] = {}
-    overflow_evaluated = None
-
-    if check.overflow_expr:
+        # 3. Bit-vector semantics: what a 32-bit C int actually computes (wrap-around)
+        bv = {v: z3.BitVec(v, 32) for v in check.int_vars}
+        wide = {v: z3.SignExt(32, x) for v, x in bv.items()}
         try:
-            ovf_solver = z3.Solver()
-            if check.condition:
-                z3_cond = parse_to_z3(check.condition, env)
-                ovf_solver.add(z3_cond)
+            r32 = parse_to_z3(check.overflow_expr, bv)
+            r64 = parse_to_z3(check.overflow_expr, wide)
+            solver = z3.Solver()
+            solver.add(z3.SignExt(32, r32) != r64)
+            if check.condition and result.overflow_under_condition:
+                solver.push()
+                solver.add(parse_to_z3(check.condition, bv))
+                if solver.check() != z3.sat:
+                    solver.pop()  # the condition itself may be written on the wrapped value; drop it
+            if solver.check() == z3.sat:
+                m = solver.model()
+                result.bv_overflow = True
+                result.bv_values = {v: _bv_int(m.eval(x, model_completion=True)) for v, x in bv.items()}
+                result.wrapped_value = _bv_int(m.eval(r32))
+        except Exception:  # noqa: BLE001, S110 - bit-vector view is best effort (e.g. unsupported ops)
+            pass
 
-            z3_expr = parse_to_z3(check.overflow_expr, env)
-            # Overflow occurs if expr > INT32_MAX or expr < INT32_MIN
-            ovf_condition = z3.Or(z3_expr > INT32_MAX, z3_expr < INT32_MIN)
-            ovf_solver.add(ovf_condition)
+        # 4. Re-verify with the v1 guard as precondition: overflow must be UNSAT
+        guard = patch_guard(check.overflow_expr or "")
+        if guard:
+            genv = dict(env, INT_MAX=z3.IntVal(INT32_MAX), INT_MIN=z3.IntVal(INT32_MIN))
+            solver = z3.Solver()
+            solver.add(*bounds, z3.Not(parse_to_z3(guard, genv)), z3.Or(expr > INT32_MAX, expr < INT32_MIN))
+            result.patch_guard = guard
+            result.patch_status = str(solver.check())
 
-            if ovf_solver.check() == z3.sat:
-                overflow_possible = True
-                m = ovf_solver.model()
-                for v in check.int_vars:
-                    val = m.eval(env[v])
-                    if val is not None:
-                        try:
-                            overflow_vals[v] = int(str(val))
-                        except ValueError:
-                            pass
-                eval_val = m.eval(z3_expr)
-                if eval_val is not None:
-                    try:
-                        overflow_evaluated = int(str(eval_val))
-                    except ValueError:
-                        pass
-        except Exception as e:
-            return SMTCheckResult(
-                name=check.name,
-                condition_sat=cond_sat,
-                overflow_possible=False,
-                model_values=model_vals,
-                details=f"Lỗi kiểm tra tràn số: {e}",
-            )
+    result.status = "overflow" if result.overflow_possible else "safe"
+    result.details = _format(check, result)
+    return result
 
-    # Format explanation details
-    lines = [f"=== KIỂM TRA SMT / SỐ HỌC (Z3 Solver): {check.name} ==="]
+
+def _format(check: ArithmeticCheck, r: SMTCheckResult) -> str:
+    lines = [f"=== KIỂM TRA SMT / SỐ HỌC (Z3): {check.name} ===",
+             f"- Miền biến: mọi biến {', '.join(check.int_vars)} ∈ [{INT32_MIN}, {INT32_MAX}] (int32)"]
     if check.condition:
-        lines.append(f"- Điều kiện: `{check.condition}`")
-        if cond_sat:
-            lines.append(f"  -> Thỏa được (SAT). Ví dụ bộ giá trị thỏa mãn: {model_vals}")
-        else:
-            lines.append("  -> Không thỏa được (UNSAT).")
-
+        lines.append(f"- Điều kiện nghiệp vụ: `{check.condition}`")
+        lines.append(f"  -> {'SAT' if r.condition_sat else 'UNSAT'}"
+                     + (f", ví dụ: {r.model_values}" if r.condition_sat else ""))
     if check.overflow_expr:
-        lines.append(f"- Biểu thức kiểm tra tràn số: `{check.overflow_expr}` (Miền int32: [{INT32_MIN}, {INT32_MAX}])")
-        if overflow_possible:
-            lines.append(
-                f"  -> CẢNH BÁO [CWE-190]: Phát hiện khả năng TRÀN SỐ NGUYÊN 32-BIT!\n"
-                f"     Bộ giá trị gây tràn: {overflow_vals}\n"
-                f"     Giá trị biểu thức tính được: {overflow_evaluated} (vượt quá INT_MAX {INT32_MAX})"
-            )
+        lines.append(f"- Biểu thức: `{check.overflow_expr}`")
+        if r.overflow_possible:
+            where = " (thỏa cả điều kiện nghiệp vụ)" if r.overflow_under_condition else ""
+            lines.append(f"  -> SAT [CWE-190]: có thể TRÀN int32{where}. Model: {r.overflow_values}, "
+                         f"giá trị đúng = {r.overflow_evaluated}")
         else:
-            lines.append("  -> An toàn: Không tìm thấy giá trị nào gây tràn số int32 trong điều kiện đã cho.")
-
-    return SMTCheckResult(
-        name=check.name,
-        condition_sat=cond_sat,
-        overflow_possible=overflow_possible,
-        model_values=model_vals,
-        overflow_values=overflow_vals,
-        overflow_evaluated=overflow_evaluated,
-        details="\n".join(lines),
-    )
+            lines.append("  -> UNSAT: không tồn tại input int32 nào làm biểu thức tràn.")
+        if r.bv_overflow:
+            lines.append(f"  -> Bit-vector 32-bit (C thật): {r.bv_values} cho kết quả wrap-around = {r.wrapped_value}")
+        if r.patch_guard:
+            verdict = "UNSAT — bản vá loại bỏ hoàn toàn tràn số" if r.patch_status == "unsat" \
+                else f"{r.patch_status.upper()} — bản vá CHƯA đủ"
+            lines.append(f"- Sau vá (v1 từ chối khi `{r.patch_guard}`): {verdict}")
+    return "\n".join(lines)
 
 
 def check_all_arithmetic(checks: list[ArithmeticCheck]) -> list[SMTCheckResult]:

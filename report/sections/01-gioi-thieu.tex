@@ -1,0 +1,54 @@
+\chapter{Giới thiệu và Mục tiêu}
+\label{ch:gioithieu}
+
+\section{Bối cảnh}
+Phần mềm thanh toán là nơi một lỗi logic nhỏ chuyển thành thiệt hại tài chính trực tiếp:
+giao hàng khi tiền chưa thực sự được thu, ghi nhận thu tiền hai lần khi cổng thanh toán gửi
+lại webhook, hoặc chấp nhận một webhook giả mạo nhờ một ``mã bí mật'' bị bỏ quên trong mã
+nguồn. Các lỗi này thuộc nhóm \cwe{840}{Business Logic Errors}, \cwe{798}{Hard-coded
+Credentials} và \cwe{667}{Improper Locking} đã học ở Chương~1. Bên cạnh đó, các hàm xử lý
+dữ liệu từ cổng thanh toán (phân tích chữ ký webhook, cộng dồn số tiền) còn chịu các lớp lỗi
+bộ nhớ và số học của Chương~2--3.
+
+Báo cáo áp dụng tuần tự kỹ thuật của cả bốn chương lên \emph{một} hệ thống — cổng thanh
+toán đơn hàng thương mại điện tử \code{payment\_gateway} — theo hướng Chủ đề~5 (quy trình
+end-to-end) của Hướng dẫn Bài tập lớn. Hệ thống được đặc tả hai lần: \textbf{v0} là thiết kế
+ban đầu còn lỗi, \textbf{v1} là thiết kế đã sửa theo kết quả kiểm chứng.
+
+\section{Mục tiêu cụ thể}
+\begin{enumerate}
+  \item \textbf{Ch.1 — Mô hình hóa:} dựng cấu trúc Kripke $K=(S,S_0,R,L)$ cho vòng đời thanh
+        toán và khóa sổ cái; kiểm chứng 8 công thức CTL (an toàn, sống còn, khả đạt) và 5 cặp
+        loại trừ lẫn nhau, có phản ví dụ cho mọi vi phạm.
+  \item \textbf{Ch.3 — BMC:} kiểm chứng lại các thuộc tính an toàn bằng Bounded Model Checking
+        với Z3, xác định completeness threshold để kết luận ``an toàn'' là đầy đủ.
+  \item \textbf{Ch.2 — Bộ nhớ:} phát hiện và vá 4 lỗi bộ nhớ C (tràn bộ đệm, rò rỉ, double
+        free, use-after-free), xác nhận trước/sau bằng static scanner và AddressSanitizer.
+  \item \textbf{Ch.3 — SMT:} chứng minh khả năng tràn int32 của 6 bộ đếm/tổng tiền, và chứng
+        minh tiền điều kiện của bản vá loại bỏ hoàn toàn tràn số (UNSAT).
+  \item \textbf{Ch.4 — Fuzzing:} so sánh định lượng black-box, coverage-guided và concolic
+        fuzzing với cùng ngân sách 2\,000 lần thử trên 3 hàm Python.
+\end{enumerate}
+
+\section{Phạm vi}
+\textbf{Trong phạm vi:} một đơn hàng, thanh toán toàn phần qua một cổng; hoàn tiền toàn phần;
+khóa sổ cái giữa hai worker; 9 hàm C/Python sinh ra từ đặc tả (khoảng 340 dòng mã C cho hai
+phiên bản); kiểm chứng trên mô hình và trên mã sinh ra.
+
+\textbf{Ngoài phạm vi:} hoàn tiền một phần, nhiều cổng thanh toán, tích hợp ngân hàng thật,
+hiệu năng (các yêu cầu phi chức năng chỉ được tài liệu hóa, không kiểm chứng tự động).
+
+\begin{ghichu}[Tuyên bố về lỗi cài đặt có chủ đích]
+Các lỗi trong đặc tả v0 (cạnh chuyển trạng thái sai trong mô hình, cột \code{Loi} của sheet
+\code{HamSinhMa}) được \textbf{cài có chủ đích} để làm đối tượng cho công cụ phát hiện, đúng như
+Hướng dẫn Bài tập lớn cho phép. Mọi kết luận ``phát hiện được'' trong báo cáo đều dựa trên
+\emph{kết quả chạy công cụ}: công cụ gộp CWE chỉ ghi nhận một lỗ hổng khi có bằng chứng
+(finding của scanner, log sanitizer, model của Z3, input gây lỗi của fuzzer, phản ví dụ
+CTL/BMC); lỗi đã khai báo mà không công cụ nào tái hiện được sẽ bị đánh dấu
+\emph{declared-only}. Trong lần chạy cuối, không có lỗi nào thuộc loại này.
+\end{ghichu}
+
+\section{Cấu trúc báo cáo}
+Chương~\ref{ch:hethong} mô tả hệ thống mục tiêu; Chương~\ref{ch:phuongphap} trình bày
+phương pháp theo từng chương học phần; Chương~\ref{ch:ketqua} trình bày kết quả kèm bằng
+chứng; Chương~\ref{ch:thaoluan} thảo luận hạn chế; Chương~\ref{ch:ketluan} kết luận.

@@ -1,0 +1,700 @@
+{
+  "spec": "payment_gateway_v1",
+  "environment": {
+    "thời gian": "2026-09-29 23:30:21 +0700",
+    "hệ điều hành": "Darwin 25.2.0 (arm64)",
+    "python": "3.11.15",
+    "z3-solver": "4.16.0",
+    "trình biên dịch C": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
+    "seed": "1",
+    "ngân sách fuzzing": "2000"
+  },
+  "timings_seconds": {
+    "ch1_kripke": 0.0003,
+    "ch3_bmc": 0.0732,
+    "codegen": 0.0,
+    "ch2_static": 0.0029,
+    "ch2_sanitizers": 0.9493,
+    "ch3_smt": 0.0266,
+    "ch4_fuzz": 0.0553,
+    "cwe": 0.0002
+  },
+  "kripke": {
+    "valid": true,
+    "states": 12,
+    "transitions": 18,
+    "deadlocks": [],
+    "properties": [
+      {
+        "formula": "Kiểm tra Deadlock (Bế tắc)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(webhook_locked & recon_locked))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(violation & safe))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(processing & paid))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(paid & failed))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(timeout & paid))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!violation)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "safe -> EF(webhook_locked)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(shipped -> paid)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(timeout -> AF(paid | failed))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!double_capture)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(!(processing & paid))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "created -> EF(shipped)",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      },
+      {
+        "formula": "AG(refunding -> AF(refunded))",
+        "status": "pass",
+        "counterexample": [],
+        "loop_start": null
+      }
+    ]
+  },
+  "bmc": [
+    {
+      "property": "AG(!violation)",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    },
+    {
+      "property": "AG(shipped -> paid)",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!double_capture)",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(processing & paid))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(webhook_locked & recon_locked))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(violation & safe))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(paid & failed))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    },
+    {
+      "property": "AG(!(timeout & paid))",
+      "status": "safe_complete",
+      "depth": null,
+      "completeness_threshold": 4,
+      "counterexample": []
+    }
+  ],
+  "static": {
+    "parse_webhook_signature/v0": [],
+    "parse_webhook_signature/v1": [],
+    "parse_order_id/v0": [],
+    "parse_order_id/v1": [],
+    "write_audit_log/v0": [],
+    "write_audit_log/v1": [],
+    "close_payment_session/v0": [],
+    "close_payment_session/v1": [],
+    "release_card_token_buffer/v0": [],
+    "release_card_token_buffer/v1": [],
+    "calculate_total_payment/v0": [],
+    "calculate_total_payment/v1": []
+  },
+  "sanitizers": [
+    {
+      "function": "calculate_total_payment",
+      "version": "v0",
+      "status": "clean",
+      "detections": []
+    },
+    {
+      "function": "calculate_total_payment",
+      "version": "v1",
+      "status": "clean",
+      "detections": []
+    }
+  ],
+  "smt": [
+    {
+      "name": "order_total_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "amount": 2147483647,
+        "shipping_fee": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2143221476,
+      "patch": "unsat"
+    },
+    {
+      "name": "daily_transaction_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "tx_today": 2147483647,
+        "tx_backlog": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2145383168,
+      "patch": "unsat"
+    },
+    {
+      "name": "active_session_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "active_sessions": 2147483647,
+        "pending_sessions": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2130435216,
+      "patch": "unsat"
+    },
+    {
+      "name": "refund_total_vnd",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "refunded_vnd": 2147483647,
+        "pending_refund_vnd": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2112845824,
+      "patch": "unsat"
+    },
+    {
+      "name": "webhook_retry_counter",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "retries_today": 2147483647,
+        "retries_backlog": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2147203978,
+      "patch": "unsat"
+    },
+    {
+      "name": "settlement_batch_bytes",
+      "condition_sat": true,
+      "overflow": true,
+      "model": {
+        "batch_bytes": 2147483647,
+        "header_bytes": 1
+      },
+      "exact_value": 2147483648,
+      "bv_wrapped": -2137979759,
+      "patch": "unsat"
+    }
+  ],
+  "fuzz": [
+    {
+      "function": "refund_ratio",
+      "version": "v0",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.002941291022580117,
+      "lines_covered": 0
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v0",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.004324458946939558,
+      "lines_covered": 3
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v0",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 3,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.003915750014130026,
+      "lines_covered": 0
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v1",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.002027417009230703,
+      "lines_covered": 0
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v1",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.004009458003565669,
+      "lines_covered": 3
+    },
+    {
+      "function": "refund_ratio",
+      "version": "v1",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 3,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.003939791989978403,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v0",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0025472500128671527,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v0",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0058275830233469605,
+      "lines_covered": 3
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v0",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 1,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 2.2249994799494743e-05,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v1",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0025371250230818987,
+      "lines_covered": 0
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v1",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0056524159736,
+      "lines_covered": 3
+    },
+    {
+      "function": "webhook_bypass_token",
+      "version": "v1",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 1,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 2.8875016141682863e-05,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v0",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0025326249888166785,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v0",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.005756166996434331,
+      "lines_covered": 3
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v0",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 1,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 2.7166970539838076e-05,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v1",
+      "strategy": "blackbox",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.0024853749782778323,
+      "lines_covered": 0
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v1",
+      "strategy": "coverage",
+      "budget": 2000,
+      "iterations": 2000,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 0.005813749972730875,
+      "lines_covered": 3
+    },
+    {
+      "function": "support_override_pin",
+      "version": "v1",
+      "strategy": "concolic",
+      "budget": 2000,
+      "iterations": 1,
+      "hits": 0,
+      "first_hit": null,
+      "first_input": null,
+      "finding": null,
+      "cwe": null,
+      "seconds": 2.5457993615418673e-05,
+      "lines_covered": 0
+    }
+  ],
+  "findings": [
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "order_total_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'amount': 2147483647, 'shipping_fee': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2143221476"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "daily_transaction_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'tx_today': 2147483647, 'tx_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145383168"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "active_session_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'active_sessions': 2147483647, 'pending_sessions': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2130435216"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "refund_total_vnd",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'refunded_vnd': 2147483647, 'pending_refund_vnd': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2112845824"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "webhook_retry_counter",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'retries_today': 2147483647, 'retries_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2147203978"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "settlement_batch_bytes",
+      "status": "confirmed",
+      "tools": [
+        "Z3"
+      ],
+      "before": [
+        "Z3 SAT: {'batch_bytes': 2147483647, 'header_bytes': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2137979759"
+      ],
+      "after": [
+        "Z3 UNSAT với tiền điều kiện của v1"
+      ],
+      "fixed": true,
+      "requirements": []
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "status": "PASS",
+      "reason": "AG(!violation) = đúng (mong đợi đúng); deadlock: không"
+    },
+    {
+      "id": "TC-2",
+      "status": "PASS",
+      "reason": "AG(shipped -> paid) = đúng (mong đợi đúng)"
+    },
+    {
+      "id": "TC-3",
+      "status": "PASS",
+      "reason": "AG(timeout -> AF(paid | failed)) = đúng (mong đợi đúng)"
+    },
+    {
+      "id": "TC-4",
+      "status": "PASS",
+      "reason": "AG(!double_capture) = đúng (mong đợi đúng)"
+    },
+    {
+      "id": "TC-5",
+      "status": "PASS",
+      "reason": "AG(refunding -> AF(refunded)) = đúng (mong đợi đúng); deadlock: không"
+    },
+    {
+      "id": "TC-6",
+      "status": "PASS",
+      "reason": "CWE-120 tại parse_webhook_signature: 0 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-7",
+      "status": "PASS",
+      "reason": "CWE-401: 0 phát hiện (mong đợi 0); CWE-415: 0 phát hiện (mong đợi 0); CWE-416: 0 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-8",
+      "status": "PASS",
+      "reason": "CWE-190 tại calculate_total_payment: 0 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-9",
+      "status": "PASS",
+      "reason": "Z3 UNSAT với tiền điều kiện của v1; Z3 SAT (tồn tại input gây tràn)"
+    },
+    {
+      "id": "TC-10",
+      "status": "PASS",
+      "reason": "fuzzing: 0/3 chiến dịch tìm ra lỗi (mong đợi 0)"
+    },
+    {
+      "id": "TC-11",
+      "status": "PASS",
+      "reason": "CWE-798: 0 phát hiện (mong đợi 0)"
+    },
+    {
+      "id": "TC-12",
+      "status": "PASS",
+      "reason": "CWE-120 tại parse_order_id: 0 phát hiện (mong đợi 0)"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+\chapter{Kết luận}
+\label{ch:ketluan}
+
+Đề tài đã áp dụng tuần tự kỹ thuật của cả bốn chương lên một hệ thống cổng thanh toán, với mọi
+kết luận đi kèm bằng chứng công cụ:
+\begin{itemize}
+  \item \textbf{Mô hình hóa (Ch.1):} trên thiết kế v0, 7 trong 14 kiểm tra (8 công thức CTL,
+        5 cặp mutex, deadlock) bị vi phạm, mỗi vi phạm có phản ví dụ — gồm giao hàng khi chưa thu
+        tiền, thu tiền hai lần, chờ vô hạn khi timeout và hoàn tiền không kết thúc. Thiết kế v1
+        đạt cả 14.
+  \item \textbf{BMC (Ch.3):} 4 thuộc tính an toàn UNSAFE trên v0 với phản ví dụ độ dài tối thiểu
+        2--3; trên v1 mọi thuộc tính SAFE và đã đạt completeness threshold (CT $=4$).
+  \item \textbf{Bộ nhớ (Ch.2):} 4 lỗi bộ nhớ C được scanner phát hiện, 3 trong số đó được ASan xác
+        nhận tại đúng dòng; bản v1 cho 0 finding và sanitizer sạch.
+  \item \textbf{SMT (Ch.3):} cả 6 bộ đếm có thể tràn int32 (wrap thành số âm); tiền điều kiện của
+        bản vá được chứng minh loại bỏ hoàn toàn tràn số (UNSAT).
+  \item \textbf{Fuzzing (Ch.4):} concolic tìm ra cả hai cửa hậu sau 4 lần chạy, trong khi
+        black-box và coverage-guided không tìm ra sau 2\,000 lần; bản v1 cho 0 lỗi trên cả 3
+        chiến lược.
+  \item \textbf{Tổng hợp:} 21 lỗ hổng có bằng chứng trên v0 (0 lỗi chỉ khai báo), test case
+        2/12 PASS; trên v1 không còn lỗ hổng chưa vá, test case 12/12 PASS.
+\end{itemize}
+Hướng phát triển: mô hình hóa xử lý webhook đồng thời bằng tổ hợp song song, và áp dụng CBMC /
+LeakSanitizer trên Linux cho mã thanh toán viết tay thay vì mã sinh từ đặc tả.

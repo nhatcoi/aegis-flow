@@ -1,0 +1,40 @@
+% Kripke: payment\_gateway\_v0 (sinh tự động bởi core.reporter)
+\begin{tikzpicture}[->,>=stealth,semithick,every node/.style={draw,rounded corners=2pt,align=center,font=\scriptsize,inner sep=3pt,minimum width=18mm}]
+  \node[fill=blue!12] (n_ledger_free) at (0.00,-0.68) {\textbf{ledger\_free}\\{\tiny \{safe\}}};
+  \node[fill=white] (n_webhook_holds) at (3.60,-1.35) {\textbf{webhook\_holds}\\{\tiny \{webhook\_locked\}}};
+  \node[fill=white] (n_recon_holds) at (3.60,-0.00) {\textbf{recon\_holds}\\{\tiny \{recon\_locked\}}};
+  \node[fill=red!20,draw=red] (n_lock_conflict) at (7.20,-0.68) {\textbf{lock\_conflict}\\{\tiny \{webhook\_locked, recon\_locked, violation\}}};
+  \node[fill=blue!12] (n_CREATED) at (0.00,-6.21) {\textbf{CREATED}\\{\tiny \{created\}}};
+  \node[fill=white] (n_PENDING) at (3.60,-6.21) {\textbf{PENDING}\\{\tiny \{processing\}}};
+  \node[fill=red!20,draw=red] (n_UNKNOWN) at (7.20,-6.21) {\textbf{UNKNOWN}\\{\tiny \{timeout\}}};
+  \node[fill=white] (n_RECONCILING) at (10.80,-3.51) {\textbf{RECONCILING}\\{\tiny \{reconciling\}}};
+  \node[fill=white] (n_SUCCEEDED) at (7.20,-7.56) {\textbf{SUCCEEDED}\\{\tiny \{paid\}}};
+  \node[fill=red!20,draw=red] (n_DUPLICATE_CAPTURE) at (10.80,-6.21) {\textbf{DUPLICATE\_CAPTURE}\\{\tiny \{paid, double\_capture\}}};
+  \node[fill=white] (n_FAILED) at (7.20,-4.86) {\textbf{FAILED}\\{\tiny \{failed\}}};
+  \node[fill=white] (n_SHIPPED) at (10.80,-8.91) {\textbf{SHIPPED}\\{\tiny \{shipped, paid\}}};
+  \node[fill=red!20,draw=red] (n_SHIPPED_UNPAID) at (10.80,-4.86) {\textbf{SHIPPED\_UNPAID}\\{\tiny \{shipped, unpaid\_shipping\}}};
+  \node[fill=red!20,draw=red] (n_REFUNDING) at (10.80,-7.56) {\textbf{REFUNDING}\\{\tiny \{refunding\}}};
+  \draw[red,very thick,bend left=12] (n_ledger_free) to (n_webhook_holds);
+  \draw[bend left=12] (n_ledger_free) to (n_recon_holds);
+  \draw[bend left=12] (n_webhook_holds) to (n_ledger_free);
+  \draw[red,very thick] (n_webhook_holds) to (n_lock_conflict);
+  \draw[bend left=12] (n_recon_holds) to (n_ledger_free);
+  \draw[] (n_lock_conflict) to (n_ledger_free);
+  \draw[] (n_CREATED) to (n_PENDING);
+  \draw[] (n_PENDING) to (n_SUCCEEDED);
+  \draw[bend left=12] (n_PENDING) to (n_FAILED);
+  \draw[] (n_PENDING) to (n_UNKNOWN);
+  \draw[] (n_UNKNOWN) edge[loop right] (n_UNKNOWN);
+  \draw[] (n_UNKNOWN) to (n_RECONCILING);
+  \draw[] (n_UNKNOWN) to (n_SHIPPED_UNPAID);
+  \draw[] (n_RECONCILING) to (n_SUCCEEDED);
+  \draw[] (n_RECONCILING) to (n_FAILED);
+  \draw[] (n_SUCCEEDED) to (n_SHIPPED);
+  \draw[] (n_SUCCEEDED) to (n_DUPLICATE_CAPTURE);
+  \draw[] (n_SUCCEEDED) to (n_REFUNDING);
+  \draw[] (n_DUPLICATE_CAPTURE) to (n_SHIPPED);
+  \draw[bend left=12] (n_FAILED) to (n_PENDING);
+  \draw[] (n_FAILED) to (n_CREATED);
+  \draw[] (n_SHIPPED) edge[loop right] (n_SHIPPED);
+  \draw[] (n_SHIPPED_UNPAID) edge[loop right] (n_SHIPPED_UNPAID);
+\end{tikzpicture}

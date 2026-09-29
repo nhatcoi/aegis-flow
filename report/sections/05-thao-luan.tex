@@ -1,0 +1,69 @@
+\chapter{Thảo luận và Hạn chế}
+\label{ch:thaoluan}
+
+\section{Tính đúng đắn (sound) và đầy đủ (complete) của từng kỹ thuật}
+Theo định nghĩa của học phần: \emph{sound} — không có false negative khi kết luận an toàn;
+\emph{complete} — không có false positive.
+
+\begin{table}[H]
+\centering\small
+\caption{Tính chất của các kỹ thuật đã dùng trong đề tài.}
+\label{tab:sound}
+\begin{tabularx}{\linewidth}{@{}l l l X@{}}
+\toprule
+Kỹ thuật & Sound? & Complete? & Ghi chú trong đề tài \\
+\midrule
+CTL trên Kripke & Có & Có & Chỉ đúng với \emph{mô hình}, không phải mã thật \\
+BMC (chưa đạt CT) & Có trong $k$ & Không & \\
+BMC (đạt CT) & Có & Có & v0: CT $=3$, v1: CT $=4$, đều đã đạt \\
+Static scanner & Không & Không & Heuristic theo mẫu, trong một hàm, không phân tích alias \\
+ASan / UBSan & Không & Có trên đường đã chạy & Chỉ một input độc hại cho mỗi hàm \\
+Z3 (int32, bit-vector) & Có & Có & Với biểu thức đã mô hình hóa \\
+Black-box fuzzing & Không & Có (lỗi tìm được luôn thật) & \\
+Coverage-guided fuzzing & Không & Có & Kẹt ở điều kiện magic value \\
+Concolic fuzzing & Không & Có & Chỉ tập con cú pháp; không mô hình hóa được thư viện ngoài \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Hạn chế}
+\begin{itemize}
+  \item \textbf{Khoảng cách mô hình -- cài đặt.} CTL/BMC chứng minh tính chất của \emph{mô hình
+        trạng thái} do chúng tôi viết tay từ yêu cầu; nếu mô hình không phản ánh đúng hệ thống
+        thanh toán thật thì kết luận ``v1 an toàn'' không tự động đúng cho hệ thống đó.
+  \item \textbf{Mã sinh từ đặc tả.} Các hàm C/Python được sinh theo khuôn mẫu nên nhỏ và đơn
+        giản (6--10 dòng mỗi hàm). Việc công cụ phát hiện được lỗi cài có chủ đích không chứng minh
+        nó sẽ phát hiện được lỗi tinh vi hơn trong mã viết tay (vd lỗi qua alias hay qua nhiều hàm).
+  \item \textbf{Static scanner} tự viết, dựa trên mẫu: không sound, không complete. Vì vậy mọi
+        finding bộ nhớ đều được đối chiếu với ASan — trừ CWE-401.
+  \item \textbf{Môi trường.} Trên macOS Apple Silicon, LeakSanitizer không được hỗ trợ nên
+        CWE-401 chỉ có bằng chứng tĩnh; chạy pipeline trên Linux sẽ bổ sung log leak.
+        cppcheck không được cài trong môi trường chạy, nên bước này được bỏ qua.
+  \item \textbf{Sanitizer} chỉ chạy một input độc hại cho mỗi hàm; nó xác nhận lỗi tồn tại chứ
+        không chứng minh v1 an toàn với mọi input — phần đó do Z3 (số học) và phân tích bản vá đảm
+        nhận.
+  \item \textbf{Fuzzing} không chứng minh sự vắng mặt của lỗi. Black-box tìm được lỗi chia cho 0
+        phần lớn nhờ tập giá trị biên; concolic dừng khi gặp lời gọi thư viện ngoài.
+  \item \textbf{Mô hình đơn luồng.} Hai worker được mô hình bằng cụm trạng thái khóa viết tay, chưa
+        dùng tổ hợp song song (parallel composition) để sinh tự động mọi cách đan xen.
+\end{itemize}
+
+\section{Phản biện và bài học}
+\paragraph{Nếu bắt đầu lại, sẽ thiết kế khác điều gì?}
+Đưa idempotency (event ID của webhook), giới hạn thời gian chờ ở trạng thái timeout và trạng thái
+kết thúc của hoàn tiền vào đặc tả \emph{ngay từ đầu}. Ba lỗi thiết kế P4, P5, P8 đều là ``thiếu
+một trạng thái/chuyển tiếp'' — những lỗi rẻ nhất để sửa ở giai đoạn đặc tả (shift-left) và đắt
+nhất nếu phát hiện khi vận hành.
+
+\paragraph{Lỗ hổng nào nghi ngờ còn tồn tại nhưng chưa xác nhận?}
+Xử lý webhook đồng thời trên nhiều đơn (race giữa hai lần gửi lại cùng một sự kiện) chưa được mô
+hình hóa bằng tổ hợp song song; rò rỉ bộ nhớ trên nhánh lỗi của mã viết tay (không phải mã sinh ra)
+chưa được kiểm tra động do thiếu LeakSanitizer trên macOS.
+
+\paragraph{Bài học lớn nhất về phương pháp luận.}
+Không một kỹ thuật đơn lẻ nào đủ: CTL tìm lỗi thiết kế mà không test hữu hạn nào chứng minh được
+(lasso của P4), Z3 chứng minh bản vá số học cho \emph{mọi} input, còn fuzzing và sanitizer xác nhận
+lỗi trên mã chạy thật. Bài học thứ hai đến từ chính quá trình làm: phiên bản đầu của bộ kiểm tra
+CTL âm thầm báo ``đạt'' với mọi công thức nó không hiểu (ví dụ $\mathbf{AG}\,\neg(a \wedge b)$) —
+một công cụ như vậy \emph{không sound}. Chúng tôi viết lại bộ kiểm tra, buộc công thức lỗi cú pháp
+phải bị báo lỗi, và kiểm tra nó bằng 30 mô hình ngẫu nhiên đối chiếu với phép duyệt vét cạn.

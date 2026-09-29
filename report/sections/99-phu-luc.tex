@@ -1,0 +1,47 @@
+\chapter{Hướng dẫn chạy lại}
+\label{app:run}
+\begin{lstlisting}[language=bash,numbers=none]
+cd source
+uv sync
+uv run pytest                                   # 103 test
+uv run python scripts/build_payment_specs.py    # sinh lai dac ta v0/v1 (tuy chon)
+uv run python -m core.pipeline dataset/specs_excel/payment_gateway_v0_spec.xlsx \
+    --compare dataset/specs_excel/payment_gateway_v1_spec.xlsx --seed 1 --budget 2000
+uv run python main.py                           # giao dien desktop
+\end{lstlisting}
+Môi trường đã dùng (\code{results/payment\_gateway\_v0/environment.txt}): macOS 26 (Darwin 25.2.0,
+arm64), Python 3.11.15, z3-solver 4.16.0, Apple clang 17.0.0. Không cần cài thêm công cụ nào ngoài
+Python và một trình biên dịch C; thiếu trình biên dịch thì bước sanitizer được bỏ qua và ghi rõ.
+
+\chapter{Danh mục bằng chứng nộp kèm}
+\label{app:logs}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+File (trong \code{results/payment\_gateway\_v0/}) & Nội dung \\
+\midrule
+\code{report.md} & Toàn bộ kết quả theo chương, phân tích từng CWE theo 5 mục \\
+\code{before\_after.md} & Bảng trước/sau đầy đủ 21 dòng \\
+\code{comparison.md} & So sánh thiết kế đặc tả v0 $\to$ v1 \\
+\code{summary.json} & Toàn bộ số liệu dạng máy đọc được \\
+\code{logs/ctl.txt}, \code{logs/bmc.txt} & Kết quả CTL (kèm phản ví dụ) và BMC theo từng $k$ \\
+\code{logs/scan.txt}, \code{logs/scan.json} & Finding của static scanner trên v0 và v1 \\
+\code{logs/sanitizer\_*\_v0.log}, \code{\_v1.log} & Lệnh biên dịch, input và log ASan/UBSan đầy đủ \\
+\code{logs/z3.txt} & Truy vấn và model Z3 cho 6 kiểm tra số học \\
+\code{logs/ast.csv} & Biến, điều kiện, McCabe, độ sâu lồng của 9 hàm $\times$ 2 phiên bản \\
+\code{logs/fuzz.csv}, \code{logs/fuzz\_events.txt} & Kết quả và sự kiện của 18 chiến dịch fuzzing \\
+\code{logs/tests.csv} & Đánh giá 12 test case \\
+\code{source/} & Mã sinh ra \code{*\_v0} và \code{*\_v1} \\
+\code{figures/kripke.png}, \code{kripke.tex} & Sơ đồ Kripke có tô phản ví dụ \\
+\bottomrule
+\end{tabularx}
+
+\chapter{Khai báo sử dụng công cụ AI}
+Theo quy định liêm chính học thuật của học phần, các phần sau có sự hỗ trợ của công cụ AI
+(Claude — Anthropic):
+\begin{itemize}
+  \item \TODO{Mô tả phần mã nguồn có hỗ trợ AI và mức độ (gợi ý / viết nháp / sinh toàn bộ), ví dụ
+        các module core/ctl.py, core/bmc.py, core/fuzzing.py, core/c\_analyzer.py, giao diện gui/.}
+  \item \TODO{Mô tả phần báo cáo có hỗ trợ AI (ví dụ: khung LaTeX, dàn ý, bản nháp các chương).}
+\end{itemize}
+Mọi kết quả thực nghiệm trong báo cáo được sinh ra bằng cách chạy công cụ (thư mục
+\code{results/}) và đã được sinh viên kiểm tra lại.

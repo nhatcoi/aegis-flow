@@ -1,0 +1,39 @@
+=== KẾT QUẢ KIỂM CHỨNG MÔ HÌNH KRIPKE: payment_gateway_v1 ===
+- Số trạng thái: 12 (Khởi tạo: ledger_free, CREATED)
+- Số chuyển tiếp: 18
+- Trạng thái không thể tới được: 0 (Không)
+- Trạng thái Deadlock: 0 (Không)
+- Tổng số thuộc tính kiểm tra: 14
+- Kết luận chung: HỢP LỆ (SAFE)
+
+Chi tiết từng thuộc tính:
+  1. [ĐẠT - PASS] Kiểm tra Deadlock (Bế tắc)
+     Đạt: Mọi trạng thái có thể tới được đều có ít nhất một chuyển tiếp đi ra (Deadlock-free).
+  2. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(webhook_locked & recon_locked))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'webhook_locked' và 'recon_locked'.
+  3. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(violation & safe))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'violation' và 'safe'.
+  4. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(processing & paid))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'processing' và 'paid'.
+  5. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(paid & failed))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'paid' và 'failed'.
+  6. [ĐẠT - PASS] Loại trừ lẫn nhau: AG(!(timeout & paid))
+     Đạt: Không có trạng thái nào đồng thời mang 2 nhãn 'timeout' và 'paid'.
+  7. [ĐẠT - PASS] Kiểm chứng CTL: AG(!violation)
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa AG(!violation).
+     CẢNH BÁO: Nhãn 'violation' không xuất hiện ở bất kỳ trạng thái nào (sai chính tả?) — được coi là luôn sai.
+  8. [ĐẠT - PASS] Kiểm chứng CTL: safe -> EF(webhook_locked)
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa safe -> EF(webhook_locked).
+  9. [ĐẠT - PASS] Kiểm chứng CTL: AG(shipped -> paid)
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa AG(shipped -> paid).
+  10. [ĐẠT - PASS] Kiểm chứng CTL: AG(timeout -> AF(paid | failed))
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa AG(timeout -> AF(paid | failed)).
+  11. [ĐẠT - PASS] Kiểm chứng CTL: AG(!double_capture)
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa AG(!double_capture).
+     CẢNH BÁO: Nhãn 'double_capture' không xuất hiện ở bất kỳ trạng thái nào (sai chính tả?) — được coi là luôn sai.
+  12. [ĐẠT - PASS] Kiểm chứng CTL: AG(!(processing & paid))
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa AG(!(processing & paid)).
+  13. [ĐẠT - PASS] Kiểm chứng CTL: created -> EF(shipped)
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa created -> EF(shipped).
+  14. [ĐẠT - PASS] Kiểm chứng CTL: AG(refunding -> AF(refunded))
+     ĐẠT: mọi trạng thái khởi tạo (ledger_free, CREATED) thỏa AG(refunding -> AF(refunded)).

@@ -3,12 +3,11 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any
 
-import matplotlib.pyplot as plt
 import networkx as nx
 from matplotlib.figure import Figure
 
+from .ctl import CTLModelChecker
 from .spec_loader import StateMachine
 
 
@@ -19,6 +18,15 @@ class VerificationResult:
     details: str
     counterexample_path: list[str] = field(default_factory=list)
     violation_states: list[str] = field(default_factory=list)
+    status: str = ""  # "pass" | "fail" | "error"; derived from `passed` when empty
+    kind: str = ""  # "deadlock" | "mutex" | "ctl"
+    formula: str = ""
+    loop_start: int | None = None
+    warnings: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.status:
+            self.status = "pass" if self.passed else "fail"
 
 
 @dataclass
@@ -128,6 +136,8 @@ class KripkeStructure:
         if not violations:
             return VerificationResult(
                 passed=True,
+                kind="mutex",
+                formula=f"AG(!({atom1} & {atom2}))",
                 title=f"Loại trừ lẫn nhau: AG(!({atom1} & {atom2}))",
                 details=f"Đạt: Không có trạng thái nào đồng thời mang 2 nhãn '{atom1}' và '{atom2}'.",
             )
@@ -137,6 +147,8 @@ class KripkeStructure:
             path_str = " -> ".join(path) if path else v_state
             return VerificationResult(
                 passed=False,
+                kind="mutex",
+                formula=f"AG(!({atom1} & {atom2}))",
                 title=f"Loại trừ lẫn nhau: AG(!({atom1} & {atom2}))",
                 details=(
                     f"VI PHẠM: Phát hiện {len(violations)} trạng thái ({', '.join(violations)}) "
@@ -148,143 +160,29 @@ class KripkeStructure:
             )
 
     def eval_ctl(self, formula: str) -> VerificationResult:
-        """Evaluate simple CTL formulas like AG(p), EF(p), AF(p), AG(!p), EF(!p), EX(p), AX(p)."""
-        formula = formula.strip()
-        reachable = self.reachable_states()
-
-        # Parse formula
-        import re
-
-        m = re.match(r"^(AG|EF|AF|EG|EX|AX)\((.*)\)$", formula, re.IGNORECASE)
-        if not m:
-            return VerificationResult(
-                passed=True,
-                title=formula,
-                details=f"Công thức '{formula}' không thuộc mẫu CTL cơ bản, bỏ qua kiểm tra tự động.",
-            )
-
-        op = m.group(1).upper()
-        inner = m.group(2).strip()
-
-        # Check for negation inside
-        is_negated = False
-        atom = inner
-        if inner.startswith("!") or inner.startswith("~"):
-            is_negated = True
-            atom = inner[1:].strip()
-
-        # Set of states satisfying atomic proposition
-        sat_atom: set[str] = set()
-        for s in self.states:
-            has_prop = atom in self.labeling.get(s, [])
-            if (has_prop and not is_negated) or (not has_prop and is_negated):
-                sat_atom.add(s)
-
-        # Evaluate operator
-        sat_op: set[str] = set()
-
-        if op == "EX":
-            # states with at least one successor in sat_atom
-            for s in self.states:
-                if any(nxt in sat_atom for nxt in self.succ[s]):
-                    sat_op.add(s)
-
-        elif op == "AX":
-            # states with all successors in sat_atom (and at least one successor)
-            for s in self.states:
-                if self.succ[s] and all(nxt in sat_atom for nxt in self.succ[s]):
-                    sat_op.add(s)
-
-        elif op == "EF":
-            # states that can reach sat_atom (backward BFS from sat_atom)
-            queue = deque(sat_atom)
-            visited = set(sat_atom)
-            while queue:
-                curr = queue.popleft()
-                for p in self.pred[curr]:
-                    if p not in visited:
-                        visited.add(p)
-                        queue.append(p)
-            sat_op = visited
-
-        elif op == "AG":
-            # AG(phi) == !(EF(!phi)) -> all reachable states must satisfy phi
-            violating_reachable = reachable - sat_atom
-            if not violating_reachable:
-                sat_op = set(self.states)
-            else:
-                sat_op = set(self.states) - set(self.find_path(self.initial, list(violating_reachable)[0]))
-
-        elif op == "AF":
-            # AF(phi): on all paths, eventually phi
-            # Fixed point iteration
-            current = set(sat_atom)
-            changed = True
-            while changed:
-                changed = False
-                for s in self.states:
-                    if s not in current and self.succ[s] and all(nxt in current for nxt in self.succ[s]):
-                        current.add(s)
-                        changed = True
-            sat_op = current
-
-        elif op == "EG":
-            # EG(phi): exists infinite path where phi holds globally
-            # Subgraph induced by sat_atom
-            sub_states = set(sat_atom)
-            changed = True
-            while changed:
-                changed = False
-                to_remove = set()
-                for s in sub_states:
-                    if not any(nxt in sub_states for nxt in self.succ[s]):
-                        to_remove.add(s)
-                if to_remove:
-                    sub_states -= to_remove
-                    changed = True
-            # states that can reach sub_states within sat_atom
-            queue = deque(sub_states)
-            visited = set(sub_states)
-            while queue:
-                curr = queue.popleft()
-                for p in self.pred[curr]:
-                    if p in sat_atom and p not in visited:
-                        visited.add(p)
-                        queue.append(p)
-            sat_op = visited
-
-        # Check if all initial states satisfy the formula
-        init_in_states = [s for s in self.initial if s in self.states]
-        all_init_sat = all(s in sat_op for s in init_in_states)
-
-        if all_init_sat:
-            return VerificationResult(
-                passed=True,
-                title=f"Kiểm chứng CTL: {formula}",
-                details=f"Đạt: Trạng thái khởi tạo ({', '.join(init_in_states)}) thỏa mãn công thức {formula}.",
-            )
-        else:
-            # Find an initial state that violates it
-            failing_inits = [s for s in init_in_states if s not in sat_op]
-            violating = list(reachable - sat_atom) if op == "AG" else failing_inits
-            v_state = violating[0] if violating else (failing_inits[0] if failing_inits else "")
-            path = self.find_path(self.initial, v_state) if v_state else []
-            return VerificationResult(
-                passed=False,
-                title=f"Kiểm chứng CTL: {formula}",
-                details=(
-                    f"VI PHẠM: Công thức {formula} không thỏa mãn tại trạng thái khởi tạo.\n"
-                    f"Trạng thái vi phạm: {', '.join(violating[:3])}\n"
-                    f"Vết phản ví dụ: {' -> '.join(path) if path else 'N/A'}"
-                ),
-                counterexample_path=path,
-                violation_states=violating,
-            )
+        """Model-check an arbitrary CTL formula (see core.ctl for the grammar)."""
+        checker = CTLModelChecker(self.states, self.initial, self.succ, self.labeling)
+        res = checker.check(formula)
+        details = res.details
+        if res.warnings:
+            details += "\n" + "\n".join(f"CẢNH BÁO: {w}" for w in res.warnings)
+        return VerificationResult(
+            passed=res.passed,
+            title=f"Kiểm chứng CTL: {formula}",
+            details=details,
+            counterexample_path=res.counterexample if not res.passed else [],
+            violation_states=res.violation_states,
+            status=res.status,
+            kind="ctl",
+            formula=formula,
+            loop_start=res.loop_start,
+            warnings=res.warnings,
+        )
 
     def verify_all(
         self,
         safety_properties: list[str] | None = None,
-        mutual_exclusion: dict[str, str] | None = None,
+        mutual_exclusion: dict[str, str] | list[dict[str, str]] | None = None,
     ) -> KripkeCheckReport:
         deadlocks = self.check_deadlock()
         reachable = self.reachable_states()
@@ -298,6 +196,7 @@ class KripkeStructure:
                 VerificationResult(
                     passed=False,
                     title="Kiểm tra Deadlock (Bế tắc)",
+                    kind="deadlock",
                     details=(
                         f"VI PHẠM: Phát hiện {len(deadlocks)} trạng thái bế tắc (không có chuyển tiếp thoát ra): "
                         f"{', '.join(deadlocks)}"
@@ -310,14 +209,16 @@ class KripkeStructure:
                 VerificationResult(
                     passed=True,
                     title="Kiểm tra Deadlock (Bế tắc)",
+                    kind="deadlock",
                     details="Đạt: Mọi trạng thái có thể tới được đều có ít nhất một chuyển tiếp đi ra (Deadlock-free).",
                 )
             )
 
         # 2. Mutual exclusion
-        if mutual_exclusion and "atom1" in mutual_exclusion and "atom2" in mutual_exclusion:
-            m_res = self.check_mutual_exclusion(mutual_exclusion["atom1"], mutual_exclusion["atom2"])
-            prop_results.append(m_res)
+        pairs = [mutual_exclusion] if isinstance(mutual_exclusion, dict) else (mutual_exclusion or [])
+        for pair in pairs:
+            if pair and pair.get("atom1") and pair.get("atom2"):
+                prop_results.append(self.check_mutual_exclusion(pair["atom1"], pair["atom2"]))
 
         # 3. CTL properties
         if safety_properties:
@@ -339,7 +240,7 @@ class KripkeStructure:
             "Chi tiết từng thuộc tính:",
         ]
         for idx, r in enumerate(prop_results, 1):
-            status = "[ĐẠT - PASS]" if r.passed else "[VI PHẠM - FAIL]"
+            status = {"pass": "[ĐẠT - PASS]", "fail": "[VI PHẠM - FAIL]", "error": "[LỖI - ERROR]"}[r.status]
             lines.append(f"  {idx}. {status} {r.title}")
             for line in r.details.split("\n"):
                 lines.append(f"     {line}")
@@ -354,21 +255,71 @@ class KripkeStructure:
             summary_text="\n".join(lines),
         )
 
+    def layered_layout(self) -> dict[str, tuple[float, float]]:
+        """Left-to-right layout: x = BFS depth from the initial states, one band per connected component."""
+        undirected: dict[str, set[str]] = {st: set() for st in self.states}
+        for a, b in self.transitions:
+            if a in undirected and b in undirected:
+                undirected[a].add(b)
+                undirected[b].add(a)
+        seen: set[str] = set()
+        components: list[list[str]] = []
+        for st in self.initial + self.states:
+            if st in seen or st not in undirected:
+                continue
+            comp, queue = [], deque([st])
+            seen.add(st)
+            while queue:
+                cur = queue.popleft()
+                comp.append(cur)
+                for nxt in undirected[cur]:
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        queue.append(nxt)
+            components.append(comp)
+
+        pos: dict[str, tuple[float, float]] = {}
+        y_offset = 0.0
+        for comp in components:
+            members = set(comp)
+            starts = [st for st in self.initial if st in members] or [comp[0]]
+            depth = {st: 0 for st in starts}
+            queue = deque(starts)
+            while queue:
+                cur = queue.popleft()
+                for nxt in self.succ[cur]:
+                    if nxt in members and nxt not in depth:
+                        depth[nxt] = depth[cur] + 1
+                        queue.append(nxt)
+            for st in comp:
+                depth.setdefault(st, max(depth.values(), default=0) + 1)
+            layers: dict[int, list[str]] = {}
+            for st in comp:  # keep spec order inside a layer
+                layers.setdefault(depth[st], []).append(st)
+            height = max(len(v) for v in layers.values())
+            for d, members_at in layers.items():
+                for i, st in enumerate(members_at):
+                    pos[st] = (float(d), -(y_offset + i + (height - len(members_at)) / 2))
+            y_offset += height + 0.6
+        return pos
+
     def draw_to_figure(
         self,
         fig: Figure | None = None,
         highlight_violations: list[str] | None = None,
         highlight_path: list[str] | None = None,
+        dark: bool = False,
     ) -> Figure:
         """Render the state graph using networkx and matplotlib."""
+        bg, fg, edge = ("#1b1d23", "#e6e8ee", "#8a93a6") if dark else ("#ffffff", "#1d2330", "#546e7a")
         if fig is None:
             fig = Figure(figsize=(7, 5), dpi=100)
-            fig.patch.set_facecolor("#ffffff")
         else:
             fig.clear()
+        fig.patch.set_facecolor(bg)
 
         ax = fig.add_subplot(111)
-        ax.set_facecolor("#ffffff")
+        ax.set_facecolor(bg)
 
         G = nx.DiGraph()
         for s in self.states:
@@ -377,16 +328,10 @@ class KripkeStructure:
             G.add_edge(src, dst)
 
         if not self.states:
-            ax.text(0.5, 0.5, "Không có trạng thái nào để hiển thị", ha="center", va="center")
+            ax.text(0.5, 0.5, "Không có trạng thái nào để hiển thị", ha="center", va="center", color=fg)
             return fig
 
-        # Layout selection
-        if len(self.states) <= 3:
-            pos = nx.circular_layout(G)
-        elif len(self.states) <= 8:
-            pos = nx.spring_layout(G, seed=42, k=1.8 / (len(self.states) ** 0.5))
-        else:
-            pos = nx.spring_layout(G, seed=42, k=2.5 / (len(self.states) ** 0.5))
+        pos = self.layered_layout()
 
         # Determine node colors
         node_colors = []
@@ -404,22 +349,18 @@ class KripkeStructure:
             for i in range(len(highlight_path) - 1):
                 path_edges.add((highlight_path[i], highlight_path[i + 1]))
 
+        palette = {
+            "viol": ("#5c2327", "#ff6b6b") if dark else ("#ffcccc", "#cc0000"),
+            "init": ("#1f4030", "#4cc38a") if dark else ("#d4edda", "#28a745"),
+            "node": ("#243049", "#5b8def") if dark else ("#e3f2fd", "#0288d1"),
+        }
         for node in G.nodes():
-            if node in violation_set:
-                node_colors.append("#ffcccc")  # Soft red
-                node_border_colors.append("#cc0000")
-            elif node in self.initial:
-                node_colors.append("#d4edda")  # Soft green
-                node_border_colors.append("#28a745")
-            else:
-                node_colors.append("#e3f2fd")  # Soft blue
-                node_border_colors.append("#0288d1")
+            key = "viol" if node in violation_set else ("init" if node in self.initial else "node")
+            node_colors.append(palette[key][0])
+            node_border_colors.append(palette[key][1])
 
         for u, v in G.edges():
-            if (u, v) in path_edges:
-                edge_colors.append("#d32f2f")
-            else:
-                edge_colors.append("#546e7a")
+            edge_colors.append("#ff5252" if (u, v) in path_edges else edge)
 
         # Draw nodes
         nx.draw_networkx_nodes(
@@ -428,7 +369,7 @@ class KripkeStructure:
             ax=ax,
             node_color=node_colors,
             edgecolors=node_border_colors,
-            node_size=2800,
+            node_size=2000 if len(self.states) > 10 else 2800,
             linewidths=2.0,
         )
 
@@ -440,7 +381,7 @@ class KripkeStructure:
             edge_color=edge_colors,
             arrowsize=18,
             arrowstyle="-|>",
-            connectionstyle="arc3,rad=0.1",
+            connectionstyle="arc3,rad=0.15",
             width=1.8,
             min_source_margin=22,
             min_target_margin=22,
@@ -458,6 +399,7 @@ class KripkeStructure:
             pos,
             labels=labels,
             ax=ax,
+            font_color=fg,
             font_size=8,
             font_family="sans-serif",
             font_weight="bold",
@@ -466,7 +408,7 @@ class KripkeStructure:
         title = f"Sơ đồ trạng thái Kripke: {self.name}"
         if self.initial:
             title += f" (Khởi tạo: {', '.join(self.initial)})"
-        ax.set_title(title, fontsize=10, fontweight="bold", pad=12)
+        ax.set_title(title, fontsize=10, fontweight="bold", pad=12, color=fg)
         ax.axis("off")
         fig.tight_layout()
         return fig

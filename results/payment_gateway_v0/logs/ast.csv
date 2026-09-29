@@ -1,0 +1,19 @@
+function,version,language,variables,conditions,loops,cyclomatic,nesting_depth,loc
+parse_webhook_signature,v0,c,raw_signature;buffer,,,1,1,6
+parse_webhook_signature,v1,c,raw_signature;buffer;len,raw_signature == NULL ; len >= sizeof buffer,,3,1,10
+parse_order_id,v0,c,raw_order_id;buffer;len,raw_order_id == NULL ; len >= sizeof buffer,,3,1,10
+parse_order_id,v1,c,raw_order_id;buffer;len,raw_order_id == NULL ; len >= sizeof buffer,,3,1,10
+write_audit_log,v0,c,data,data == NULL,,2,1,7
+write_audit_log,v1,c,data,data == NULL,,2,1,9
+close_payment_session,v0,c,data,data == NULL,,2,1,9
+close_payment_session,v1,c,data,data == NULL,,2,1,9
+release_card_token_buffer,v0,c,data,data == NULL,,2,1,8
+release_card_token_buffer,v1,c,data,data == NULL,,2,1,9
+calculate_total_payment,v0,c,amount;shipping_fee;out,,,1,1,4
+calculate_total_payment,v1,c,amount;shipping_fee;out,(shipping_fee > 0 && amount > INT_MAX - shipping_fee) || (shipping_fee < 0 && amount < INT_MIN - shipping_fee),,5,2,7
+refund_ratio,v0,python,refund_amount;total_amount,,,1,0,2
+refund_ratio,v1,python,refund_amount;total_amount,total_amount == 0,,2,1,4
+webhook_bypass_token,v0,python,header_token;secret_token,header_token == 7788 ; secret_token == 9999,,3,2,5
+webhook_bypass_token,v1,python,header_token;secret_token;expected,not expected,,2,1,5
+support_override_pin,v0,python,pin_a;pin_b,pin_a == 4821 ; pin_b == 7306,,3,2,5
+support_override_pin,v1,python,pin_a;pin_b;expected,not expected,,2,1,5

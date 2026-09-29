@@ -1,14 +1,13 @@
 """Automated tests for Spec Verification Lab core pipeline."""
 from pathlib import Path
-import pytest
 
-from core.spec_loader import load_specification
-from core.kripke import KripkeStructure
-from core.codegen import generate_all_functions
 from core.arithmetic_z3 import check_all_arithmetic
+from core.codegen import generate_all_functions
 from core.cwe_analyzer import analyze_security_vulnerabilities
+from core.kripke import KripkeStructure
+from core.pipeline import run_pipeline
 from core.reporter import generate_markdown_report
-
+from core.spec_loader import load_specification
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SPECS_JSON_DIR = BASE_DIR / "dataset" / "specs"
@@ -92,8 +91,8 @@ def test_excel_elevator_control():
     audit = analyze_security_vulnerabilities(spec, report, smt_res)
     assert audit.total_findings >= 1
 
-    md_report = generate_markdown_report(spec, report, funcs, smt_res, audit)
-    assert "BÁO CÁO KIỂM CHỨNG" in md_report
+    md_report = generate_markdown_report(run_pipeline(spec, fuzz_budget=200, run_tools=False))
+    assert "Kết quả kiểm chứng" in md_report
 
 
 def test_payment_ecommerce_spec():

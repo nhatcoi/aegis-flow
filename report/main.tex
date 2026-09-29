@@ -1,0 +1,37 @@
+\documentclass[12pt,a4paper]{report}
+\input{preamble}
+
+% ===== Thông tin đề tài — sửa tại đây =====
+\newcommand{\detai}{Kiểm chứng end-to-end đặc tả hệ thống thanh toán điện tử:\\từ mô hình Kripke tới fuzzing}
+\newcommand{\sinhvien}{\TODO{Họ và tên}}
+\newcommand{\mssv}{\TODO{MSSV}}
+\newcommand{\lop}{\TODO{Lớp}}
+\newcommand{\giangvien}{ThS. Vũ Quang Dũng}
+\newcommand{\hocky}{\TODO{Học kỳ, năm học}}
+
+\begin{document}
+
+\input{sections/00-bia}
+
+\pagenumbering{roman}
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+
+\input{sections/01-gioi-thieu}
+\input{sections/02-he-thong}
+\input{sections/03-phuong-phap}
+\input{sections/04-ket-qua}
+\input{sections/05-thao-luan}
+\input{sections/06-ket-luan}
+
+\nocite{*}
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\appendix
+\input{sections/99-phu-luc}
+
+\end{document}

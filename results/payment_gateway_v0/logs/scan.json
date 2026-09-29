@@ -1,0 +1,54 @@
+{
+  "parse_webhook_signature/v0": [
+    {
+      "rule": "dangerous-function",
+      "cwe": "CWE-120",
+      "severity": "HIGH",
+      "function": "parse_webhook_signature",
+      "line": 9,
+      "code": "strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */",
+      "message": "Gọi 'strcpy()' không giới hạn kích thước đích — dùng strnlen + memcpy."
+    }
+  ],
+  "parse_webhook_signature/v1": [],
+  "parse_order_id/v0": [],
+  "parse_order_id/v1": [],
+  "write_audit_log/v0": [
+    {
+      "rule": "memory-leak",
+      "cwe": "CWE-401",
+      "severity": "MEDIUM",
+      "function": "write_audit_log",
+      "line": 12,
+      "code": "return 0; /* thoat ma khong free */",
+      "message": "'data' cấp phát tại dòng 8 không được free() trước khi thoát hàm."
+    }
+  ],
+  "write_audit_log/v1": [],
+  "close_payment_session/v0": [
+    {
+      "rule": "double-free",
+      "cwe": "CWE-415",
+      "severity": "HIGH",
+      "function": "close_payment_session",
+      "line": 13,
+      "code": "free(data); /* giai phong lan thu hai */",
+      "message": "free('data') lần hai (đã free() tại dòng 12)."
+    }
+  ],
+  "close_payment_session/v1": [],
+  "release_card_token_buffer/v0": [
+    {
+      "rule": "use-after-free",
+      "cwe": "CWE-416",
+      "severity": "HIGH",
+      "function": "release_card_token_buffer",
+      "line": 12,
+      "code": "data[0] = 'A'; /* ghi sau khi da free */",
+      "message": "Dùng 'data' sau khi đã free() tại dòng 11."
+    }
+  ],
+  "release_card_token_buffer/v1": [],
+  "calculate_total_payment/v0": [],
+  "calculate_total_payment/v1": []
+}

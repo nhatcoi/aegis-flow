@@ -1,0 +1,13 @@
+$ /usr/bin/clang -fsanitize=address,undefined -fno-omit-frame-pointer -g -O0 -o calculate_total_payment_v0.bin calculate_total_payment_v0.c calculate_total_payment_v0_harness.c
+# input: (INT_MAX, 1)
+# exit code: 0
+# status: detected
+# note: LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
+
+rc=0 out=-2147483648
+results/payment_gateway_v0/build/calculate_total_payment_v0.c:5:19: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
+    #0 0x0001020408b4 in calculate_total_payment calculate_total_payment_v0.c:5
+    #1 0x000102040aa0 in main calculate_total_payment_v0_harness.c:6
+    #2 0x000194605d50  (<unknown module>)
+
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior results/payment_gateway_v0/build/calculate_total_payment_v0.c:5:19 
