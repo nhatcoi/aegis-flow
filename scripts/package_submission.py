@@ -19,8 +19,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ITEMS = ["core", "gui", "scripts", "tests", "dataset/specs", "dataset/specs_excel", "main.py",
                 "pyproject.toml", "uv.lock", "README.md"]
-WEB_ITEMS = ["backend", "frontend/src", "frontend/package.json", "frontend/package-lock.json",
-             "frontend/index.html", "frontend/vite.config.ts", "frontend/tsconfig.json", "specs"]
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", "node_modules", ".DS_Store")
 
 README = """# {folder}
@@ -80,7 +78,6 @@ def main() -> int:
     parser.add_argument("--name", required=True, help="Họ tên (có dấu cũng được)")
     parser.add_argument("--pdf", type=Path, default=ROOT / "report" / "main.pdf")
     parser.add_argument("--out", type=Path, default=ROOT / "dist")
-    parser.add_argument("--include-web", action="store_true", help="Kèm backend FastAPI + frontend React")
     parser.add_argument("--rerun", action="store_true", help="Chạy lại pipeline trước khi đóng gói")
     args = parser.parse_args()
 
@@ -95,10 +92,8 @@ def main() -> int:
                         "dataset/specs_excel/payment_gateway_v0_spec.xlsx",
                         "--compare", "dataset/specs_excel/payment_gateway_v1_spec.xlsx"], cwd=ROOT, check=True)
 
-    for rel in SOURCE_ITEMS + (WEB_ITEMS if args.include_web else []):
+    for rel in SOURCE_ITEMS:
         copy_item(rel, target / "source")
-    if not args.include_web:
-        shutil.rmtree(target / "source" / "tests" / "web", ignore_errors=True)  # needs backend/
     if (ROOT / "results").exists():
         shutil.copytree(ROOT / "results", target / "results", ignore=IGNORE)
 

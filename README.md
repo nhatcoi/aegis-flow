@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.11–3.13-3776AB?logo=python&logoColor=white)
 ![Z3](https://img.shields.io/badge/solver-Z3%204.16-8A2BE2)
 ![Qt](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-152%20passed-success)
+![Tests](https://img.shields.io/badge/tests-103%20passed-success)
 ![Course](https://img.shields.io/badge/CSE703093-An%20toàn%20phần%20mềm-orange)
 
 </div>
@@ -208,7 +208,7 @@ uv run pytest
 uv run ruff check core gui tests scripts main.py
 ```
 
-Bộ test gồm 152 test. Một số nhóm chính:
+Bộ test gồm 103 test. Một số nhóm chính:
 
 - **CTL**: kiểm tra từng toán tử; đối chiếu 30 mô hình ngẫu nhiên với bộ duyệt đường đi vét cạn; hồi quy cho lỗi `AG(!(a & b))` của phiên bản cũ.
 - **BMC**: phản ví dụ tối thiểu, đạt hoặc chưa đạt completeness threshold.
@@ -216,7 +216,6 @@ Bộ test gồm 152 test. Một số nhóm chính:
 - **SMT**: model nằm trong miền int32, wrap-around bit-vector, bản vá cho UNSAT.
 - **Fuzzing**: concolic tìm ra magic value trong khi black-box không tìm ra; kết quả tái tạo được theo seed.
 - **End-to-end**: v0 có đủ các CWE mong đợi, v1 sạch và 12/12 test case PASS; CLI ghi đủ các file trong `results/`.
-- `tests/web/`: test cho bản web cũ.
 
 ## Cấu trúc mã nguồn
 
@@ -229,8 +228,7 @@ scripts/     build_payment_specs.py, package_submission.py
 results/     bằng chứng đã xuất cho payment_gateway_v0 / v1
 report/      báo cáo LaTeX (main.tex, sections/, figures/)
 docs/        hình minh họa cho README
-tests/       pytest cho pipeline; tests/web/ cho bản web
-backend/, frontend/, specs/   bản web (FastAPI + React) trước đây, không thuộc pipeline chính
+tests/       pytest
 ```
 
 ## Giới hạn đã biết
