@@ -17,7 +17,7 @@ import qdarktheme
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFontDatabase
+from PyQt6.QtGui import QAction, QColor, QFontDatabase, QTextCursor, QTextFormat
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -39,12 +39,13 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTextBrowser,
+    QTextEdit,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
-from core.codegen import format_code_with_line_numbers
+from core.codegen import GeneratedFunction, format_code_with_line_numbers, generate_all_functions
 from core.kripke import KripkeStructure
 from core.pipeline import PipelineReport, run_pipeline
 from core.reporter import BMC_VI, STATUS_VI, generate_markdown_report, write_results
@@ -55,7 +56,7 @@ from .theme import TOKENS, stylesheet
 BASE_DIR = Path(__file__).resolve().parent.parent
 SPEC_DIRS = [BASE_DIR / "dataset" / "specs_excel", BASE_DIR / "dataset" / "specs"]
 DEFAULT_SPEC = BASE_DIR / "dataset" / "specs_excel" / "payment_gateway_v0_spec.xlsx"
-STEPS = [("ch1", "Kripke/CTL"), ("ch2", "Bộ nhớ C"), ("ch3", "SMT/BMC"), ("ch4", "Fuzzing"), ("cwe", "CWE")]
+STEPS = [("ch1", "Kripke/CTL"), ("ch2", "Sinh mã + C"), ("ch3", "SMT/BMC"), ("ch4", "Fuzzing"), ("cwe", "CWE")]
 
 
 class PipelineWorker(QObject):
@@ -102,6 +103,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 700)
         self.mode = "dark"
         self.spec: Specification | None = None
+        self.functions: list[GeneratedFunction] = []
         self.report: PipelineReport | None = None
         self.model: KripkeStructure | None = None
         self.thread: QThread | None = None
@@ -199,7 +201,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self.tabs.addTab(self._tab_kripke(), "Ch.1 Kripke/CTL")
-        self.tabs.addTab(self._tab_code(), "Ch.2 Mã và bộ nhớ")
+        self.tabs.addTab(self._tab_code(), "Ch.2 Sinh mã · Bộ nhớ")
         self.tabs.addTab(self._tab_smt(), "Ch.3 SMT/BMC")
         self.tabs.addTab(self._tab_fuzz(), "Ch.4 Fuzzing")
         self.tabs.addTab(self._tab_cwe(), "Lỗ hổng CWE")
@@ -248,11 +250,15 @@ class MainWindow(QMainWindow):
         self.cbo_fn.setMinimumWidth(320)
         self.cbo_fn.currentIndexChanged.connect(self._on_fn_selected)
         top.addWidget(self.cbo_fn)
+        self.lbl_fn = QLabel()
+        self.lbl_fn.setObjectName("metric")
+        top.addWidget(self.lbl_fn)
         top.addStretch()
         lay.addLayout(top)
         split = QSplitter(Qt.Orientation.Horizontal)
         self.txt_v0, self.txt_v1 = QPlainTextEdit(), QPlainTextEdit()
-        for box, title in ((self.txt_v0, "v0 — có lỗi"), (self.txt_v1, "v1 — đã vá")):
+        for box, title in ((self.txt_v0, "v0 — mã sinh ra theo đặc tả (có lỗi khai báo)"),
+                           (self.txt_v1, "v1 — bản đã vá")):
             box.setReadOnly(True)
             box.setFont(self.mono)
             box.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -337,9 +343,9 @@ class MainWindow(QMainWindow):
         for folder in SPEC_DIRS:
             for f in sorted(folder.glob("*.xlsx")) + sorted(folder.glob("*.json")):
                 self.cbo_spec.addItem(f"{f.stem}  ·  {f.suffix[1:]}", str(f))
-        self.cbo_spec.blockSignals(False)
         idx = self.cbo_spec.findData(str(DEFAULT_SPEC))
         self.cbo_spec.setCurrentIndex(max(idx, 0))
+        self.cbo_spec.blockSignals(False)
         self._on_spec_changed()
 
     def _browse(self) -> None:
@@ -377,11 +383,7 @@ class MainWindow(QMainWindow):
         self._fill_test_cases()
         self.model = KripkeStructure.from_state_machine(sm, s.name) if sm and sm.states else None
         self._draw_model()
-        self.cbo_fn.blockSignals(True)
-        self.cbo_fn.clear()
-        self.cbo_fn.blockSignals(False)
-        self.txt_v0.clear()
-        self.txt_v1.clear()
+        self._set_functions(generate_all_functions(s))
         self._inspect(f"<h3>{s.name}</h3><p>{s.description}</p>")
         self._log(f"Đã nạp {Path(path).name}: {s.summary()}")
         self.statusBar().showMessage(f"Đã nạp {s.name}. Bấm “Chạy pipeline”.")
@@ -458,12 +460,7 @@ class MainWindow(QMainWindow):
         self._draw_model(viol)
 
         # Ch.2
-        self.cbo_fn.blockSignals(True)
-        self.cbo_fn.clear()
-        for gf in rep.functions:
-            self.cbo_fn.addItem(f"{gf.spec.name}  ·  {gf.language}  ·  {gf.spec.kind}")
-        self.cbo_fn.blockSignals(False)
-        self._on_fn_selected()
+        self._set_functions(rep.functions)
         mem = [[n, v, "Static scanner", "; ".join(f"{f.rule} dòng {f.line}" for f in fs) or "0 finding"]
                for (n, v), fs in rep.static.items()]
         mem += [[s.function, s.version, "ASan/UBSan",
@@ -514,15 +511,73 @@ class MainWindow(QMainWindow):
             self._inspect(f"<h3>{r.formula or r.title}</h3><p><b>{STATUS_VI[r.status]}</b></p>"
                           f"<p>{details}</p>{warn}")
 
-    def _on_fn_selected(self) -> None:
-        if not self.report:
+    def _set_functions(self, functions: list[GeneratedFunction]) -> None:
+        keep = self.cbo_fn.currentIndex()
+        self.functions = functions
+        self.cbo_fn.blockSignals(True)
+        self.cbo_fn.clear()
+        for gf in functions:
+            mark = "  ⚠" if gf.has_bug else ""
+            self.cbo_fn.addItem(f"{gf.spec.name}  ·  {gf.language}  ·  {gf.spec.kind}{mark}")
+        self.cbo_fn.setCurrentIndex(keep if 0 <= keep < len(functions) else 0)
+        self.cbo_fn.blockSignals(False)
+        if not functions:
+            self.txt_v0.setPlainText("Đặc tả không khai báo hàm nào trong sheet HamSinhMa.")
+            self.txt_v1.clear()
+            self.lbl_fn.clear()
             return
+        self._on_fn_selected()
+
+    def _highlight(self, box: QPlainTextEdit, lines: set[int]) -> None:
+        selections = []
+        for n in sorted(lines):
+            sel = QTextEdit.ExtraSelection()
+            color = self._color("fail")
+            color.setAlpha(70)
+            sel.format.setBackground(color)
+            sel.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+            block = box.document().findBlockByLineNumber(n - 1)
+            sel.cursor = QTextCursor(block)
+            selections.append(sel)
+        box.setExtraSelections(selections)
+
+    def _on_fn_selected(self) -> None:
         idx = self.cbo_fn.currentIndex()
-        if 0 <= idx < len(self.report.functions):
-            gf = self.report.functions[idx]
-            self.txt_v0.setPlainText(format_code_with_line_numbers(gf.code_vulnerable))
-            self.txt_v1.setPlainText(format_code_with_line_numbers(gf.code_safe))
-            self._inspect(f"<h3>{gf.spec.name}</h3><p>{gf.explanation}</p>")
+        if not 0 <= idx < len(self.functions):
+            return
+        gf = self.functions[idx]
+        fn = gf.spec
+        self.txt_v0.setPlainText(format_code_with_line_numbers(gf.code_vulnerable))
+        self.txt_v1.setPlainText(format_code_with_line_numbers(gf.code_safe))
+        bug = fn.bug or ("—" if fn.language == "c" else "mặc định (có lỗi)")
+        self.lbl_fn.setText(f"Loi = {bug}" + (f" · bộ đệm {fn.buffer_size} byte" if fn.buffer_size else "")
+                            + ("" if gf.has_bug else " · v0 = v1 (không cài lỗi)"))
+
+        html = [f"<h3>{fn.name}</h3><p>{gf.explanation}</p>"]
+        bad_lines: set[int] = set()
+        if self.report:
+            rep = self.report
+            for version in ("v0", "v1"):
+                finds = rep.static.get((fn.name, version))
+                if finds is not None:
+                    items = "".join(f"<li>dòng {f.line}: {f.rule} ({f.cwe})</li>" for f in finds) or "<li>0 finding</li>"
+                    html.append(f"<p><b>Scanner {version}</b></p><ul>{items}</ul>")
+                    if version == "v0":
+                        bad_lines |= {f.line for f in finds}
+            for r in rep.sanitizers:
+                if r.function == fn.name:
+                    det = "; ".join(f"{k} dòng {ln}" for k, _, ln in r.detections) or r.status
+                    html.append(f"<p><b>ASan/UBSan {r.version}:</b> {det}</p>")
+                    if r.version == "v0":
+                        bad_lines |= {ln for _, _, ln in r.detections if ln}
+            for r in rep.fuzz:
+                if r.function == fn.name:
+                    hit = f"lỗi ở lần {r.first_hit}, input {r.first_input}" if r.found else "không tìm ra lỗi"
+                    html.append(f"<p><b>{r.strategy} {r.version}:</b> {r.hits}/{r.iterations} — {hit}</p>")
+        else:
+            html.append("<p><i>Bấm “Chạy pipeline” để quét tĩnh, chạy ASan/UBSan và fuzzing trên hàm này.</i></p>")
+        self._highlight(self.txt_v0, bad_lines)
+        self._inspect("".join(html))
 
     def _on_smt_selected(self) -> None:
         row = self.tbl_smt.currentRow()
