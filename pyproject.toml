@@ -1,7 +1,7 @@
 [project]
-name = "payment-proof-lab"
+name = "aegisflow"
 version = "0.1.0"
-description = "Executable payment specifications, Z3 bounded checking and runtime monitoring"
+description = "Spec-driven security verification for payment flows: Kripke/CTL, Z3 BMC/SMT, sanitizers and fuzzing"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi>=0.115,<1",

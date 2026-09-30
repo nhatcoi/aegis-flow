@@ -1,4 +1,4 @@
-"""Entry point for the Payment Proof Lab desktop application."""
+"""Entry point for the AegisFlow desktop application."""
 import sys
 from pathlib import Path
 

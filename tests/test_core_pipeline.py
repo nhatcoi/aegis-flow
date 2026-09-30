@@ -1,4 +1,4 @@
-"""Automated tests for Spec Verification Lab core pipeline."""
+"""Automated tests for the AegisFlow core pipeline."""
 from pathlib import Path
 
 from core.arithmetic_z3 import check_all_arithmetic

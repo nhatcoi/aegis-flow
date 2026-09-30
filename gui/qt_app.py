@@ -1,4 +1,4 @@
-"""Desktop GUI for Payment Proof Lab.
+"""Desktop GUI for AegisFlow.
 
 Every analysis goes through ``core.pipeline.run_pipeline`` (run on a worker
 thread), so the GUI shows exactly what the CLI exports to ``results/``.
@@ -97,7 +97,7 @@ def _section(text: str) -> QLabel:
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Payment Proof Lab")
+        self.setWindowTitle("AegisFlow")
         self.resize(1440, 900)
         self.setMinimumSize(1100, 700)
         self.mode = "dark"
@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
         tb.setMovable(False)
         self.addToolBar(tb)
 
-        brand = QLabel("◆ Proof Lab")
+        brand = QLabel("◆ AegisFlow")
         brand.setObjectName("brand")
         tb.addWidget(brand)
 
@@ -575,7 +575,7 @@ def apply_theme(app: QApplication, mode: str) -> None:
 
 def main() -> None:
     app = QApplication(sys.argv)
-    app.setApplicationName("Payment Proof Lab")
+    app.setApplicationName("AegisFlow")
     apply_theme(app, "dark")
     window = MainWindow()
     window.show()
