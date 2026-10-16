@@ -255,8 +255,8 @@ class KripkeStructure:
             summary_text="\n".join(lines),
         )
 
-    def layered_layout(self) -> dict[str, tuple[float, float]]:
-        """Left-to-right layout: x = BFS depth from the initial states, one band per connected component."""
+    def components(self) -> list[list[str]]:
+        """Weakly connected components, in the order of the initial states (independent sub-flows)."""
         undirected: dict[str, set[str]] = {st: set() for st in self.states}
         for a, b in self.transitions:
             if a in undirected and b in undirected:
@@ -277,7 +277,11 @@ class KripkeStructure:
                         seen.add(nxt)
                         queue.append(nxt)
             components.append(comp)
+        return components
 
+    def layered_layout(self) -> dict[str, tuple[float, float]]:
+        """Left-to-right layout: x = BFS depth from the initial states, one band per connected component."""
+        components = self.components()
         pos: dict[str, tuple[float, float]] = {}
         y_offset = 0.0
         for comp in components:
@@ -294,7 +298,7 @@ class KripkeStructure:
             for st in comp:
                 depth.setdefault(st, max(depth.values(), default=0) + 1)
             layers: dict[int, list[str]] = {}
-            for st in comp:  # keep spec order inside a layer
+            for st in sorted(comp, key=self.states.index):  # keep spec order inside a layer
                 layers.setdefault(depth[st], []).append(st)
             height = max(len(v) for v in layers.values())
             for d, members_at in layers.items():
@@ -309,6 +313,7 @@ class KripkeStructure:
         highlight_violations: list[str] | None = None,
         highlight_path: list[str] | None = None,
         dark: bool = False,
+        only: list[str] | None = None,
     ) -> Figure:
         """Render the state graph using networkx and matplotlib."""
         bg, fg, edge = ("#1b1d23", "#e6e8ee", "#8a93a6") if dark else ("#ffffff", "#1d2330", "#546e7a")
@@ -321,17 +326,21 @@ class KripkeStructure:
         ax = fig.add_subplot(111)
         ax.set_facecolor(bg)
 
+        shown = [st for st in self.states if only is None or st in only]
         G = nx.DiGraph()
-        for s in self.states:
+        for s in shown:
             G.add_node(s)
         for src, dst in self.transitions:
-            G.add_edge(src, dst)
+            if src in G and dst in G and src != dst:
+                G.add_edge(src, dst)
+        self_loops = [st for st in G if st in self.succ.get(st, [])]
 
-        if not self.states:
+        if not shown:
             ax.text(0.5, 0.5, "Không có trạng thái nào để hiển thị", ha="center", va="center", color=fg)
             return fig
 
-        pos = self.layered_layout()
+        pos = {st: xy for st, xy in self.layered_layout().items() if st in G}
+        on_path = set(highlight_path or [])
 
         # Determine node colors
         node_colors = []
@@ -354,56 +363,41 @@ class KripkeStructure:
             "init": ("#1f4030", "#4cc38a") if dark else ("#d4edda", "#28a745"),
             "node": ("#243049", "#5b8def") if dark else ("#e3f2fd", "#0288d1"),
         }
+        dim = 0.3 if len(on_path) >= 2 else 1.0
         for node in G.nodes():
             key = "viol" if node in violation_set else ("init" if node in self.initial else "node")
             node_colors.append(palette[key][0])
             node_border_colors.append(palette[key][1])
+        node_alpha = [1.0 if dim == 1.0 or n in on_path else dim for n in G.nodes()]
 
         for u, v in G.edges():
             edge_colors.append("#ff5252" if (u, v) in path_edges else edge)
+        edge_alpha = [1.0 if dim == 1.0 or (u, v) in path_edges else dim for u, v in G.edges()]
 
-        # Draw nodes
-        nx.draw_networkx_nodes(
-            G,
-            pos,
-            ax=ax,
-            node_color=node_colors,
-            edgecolors=node_border_colors,
-            node_size=2000 if len(self.states) > 10 else 2800,
-            linewidths=2.0,
-        )
+        nx.draw_networkx_nodes(G, pos, ax=ax, node_color=node_colors, edgecolors=node_border_colors,
+                               node_size=900, linewidths=2.0, alpha=node_alpha)
+        nx.draw_networkx_edges(G, pos, ax=ax, edge_color=edge_colors, alpha=edge_alpha, arrowsize=14,
+                               arrowstyle="-|>", connectionstyle="arc3,rad=0.12",
+                               width=[2.6 if e in path_edges else 1.4 for e in G.edges()],
+                               min_source_margin=16, min_target_margin=16)
 
-        # Draw edges with curvature
-        nx.draw_networkx_edges(
-            G,
-            pos,
-            ax=ax,
-            edge_color=edge_colors,
-            arrowsize=18,
-            arrowstyle="-|>",
-            connectionstyle="arc3,rad=0.15",
-            width=1.8,
-            min_source_margin=22,
-            min_target_margin=22,
-        )
-
-        # Draw labels: State name + atomic propositions
-        labels = {}
-        for s in self.states:
-            lbl_list = self.labeling.get(s, [])
-            lbl_str = f"{{{', '.join(lbl_list)}}}" if lbl_list else ""
-            labels[s] = f"{s}\n{lbl_str}" if lbl_str else s
-
-        nx.draw_networkx_labels(
-            G,
-            pos,
-            labels=labels,
-            ax=ax,
-            font_color=fg,
-            font_size=8,
-            font_family="sans-serif",
-            font_weight="bold",
-        )
+        # Labels go under the node: state name, then its propositions in a muted colour
+        muted = "#8a93a6" if dark else "#6b7385"
+        for st, (x, y) in pos.items():
+            alpha = 1.0 if dim == 1.0 or st in on_path else 0.45
+            ax.annotate(st, (x, y), xytext=(0, -19), textcoords="offset points", ha="center", va="top",
+                        fontsize=8, fontweight="bold", color=fg, alpha=alpha)
+            props = self.labeling.get(st, [])
+            if props:
+                ax.annotate(", ".join(props), (x, y), xytext=(0, -30), textcoords="offset points",
+                            ha="center", va="top", fontsize=7, color=muted, alpha=alpha)
+        for st in self_loops:  # a drawn self-loop ellipse would cover the labels; mark it instead
+            x, y = pos[st]
+            loop_on_path = (st, st) in path_edges
+            ax.annotate("↺", (x, y), xytext=(13, 9), textcoords="offset points", fontsize=12,
+                        fontweight="bold", color="#ff5252" if loop_on_path else edge,
+                        alpha=1.0 if dim == 1.0 or loop_on_path else dim)
+        ax.margins(x=0.08, y=0.14)
 
         title = f"Sơ đồ trạng thái Kripke: {self.name}"
         if self.initial:

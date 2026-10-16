@@ -18,3 +18,6 @@ data/
 # Course materials (large, copyrighted) — kept locally only
 An toàn phần mềm-*_TaiLieu/
 dist/
+
+# Local secrets (AI API key)
+.env

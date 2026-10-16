@@ -2,7 +2,7 @@
 
 Single entry point shared by the CLI and the GUI::
 
-    uv run python -m core.pipeline dataset/specs_excel/payment_ecommerce_spec.xlsx --seed 1 --out results/payment
+    uv run python -m core.pipeline dataset/specs_excel/payment_gateway_v0_spec.xlsx --seed 1 --out results/payment_gateway_v0
 """
 from __future__ import annotations
 
@@ -59,7 +59,8 @@ class PipelineReport:
     timings: dict[str, float] = field(default_factory=dict)
 
 
-def environment_info(seed: int, budget: int) -> dict[str, str]:
+def environment_info(seed: int, budget: int, bmc_depth: int | None = None,
+                     sanitizer_timeout: int = 30) -> dict[str, str]:
     return {
         "thời gian": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
         "hệ điều hành": f"{platform.system()} {platform.release()} ({platform.machine()})",
@@ -68,6 +69,8 @@ def environment_info(seed: int, budget: int) -> dict[str, str]:
         "trình biên dịch C": compiler_version(),
         "seed": str(seed),
         "ngân sách fuzzing": str(budget),
+        "độ sâu BMC": "tự động (CT)" if bmc_depth is None else str(bmc_depth),
+        "timeout sanitizer": f"{sanitizer_timeout}s",
     }
 
 
@@ -150,8 +153,11 @@ def evaluate_test_case(tc: TestCase, rep: PipelineReport) -> TestCaseResult:
 # Pipeline
 # ---------------------------------------------------------------------------
 def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
-                 run_tools: bool = True, workdir: Path | None = None) -> PipelineReport:
-    rep = PipelineReport(spec, seed, fuzz_budget, environment=environment_info(seed, fuzz_budget))
+                 run_tools: bool = True, workdir: Path | None = None,
+                 bmc_depth: int | None = None, sanitizer_timeout: int = 30) -> PipelineReport:
+    """``bmc_depth=None`` runs BMC up to the completeness threshold (reachability diameter)."""
+    rep = PipelineReport(spec, seed, fuzz_budget,
+                         environment=environment_info(seed, fuzz_budget, bmc_depth, sanitizer_timeout))
 
     def timed(key: str):
         class _T:
@@ -172,7 +178,8 @@ def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
 
     with timed("ch3_bmc"):
         if rep.kripke_model:
-            rep.bmc = bmc_properties(rep.kripke_model, spec.safety_properties, spec.mutual_exclusions)
+            rep.bmc = bmc_properties(rep.kripke_model, spec.safety_properties, spec.mutual_exclusions,
+                                     max_bound=bmc_depth)
 
     with timed("codegen"):
         rep.functions = generate_all_functions(spec)
@@ -196,7 +203,7 @@ def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
                 for gf in rep.functions:
                     if gf.language == "c" and (gf.has_bug or gf.spec.kind == "arithmetic"):
                         for version in ("v0", "v1"):
-                            rep.sanitizers.append(run_sanitizers(gf, version, build_dir))
+                            rep.sanitizers.append(run_sanitizers(gf, version, build_dir, timeout=sanitizer_timeout))
 
     with timed("ch3_smt"):
         rep.smt = check_all_arithmetic(spec.arithmetic_checks)
@@ -218,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("spec", help="Đặc tả .json hoặc .xlsx")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--budget", type=int, default=2000, help="Số lần thử fuzzing cho mỗi chiến lược")
+    parser.add_argument("--bmc-depth", type=int, metavar="K",
+                        help="Độ sâu tối đa của BMC (mặc định: completeness threshold của mô hình)")
+    parser.add_argument("--sanitizer-timeout", type=int, default=30, metavar="GIÂY",
+                        help="Thời gian tối đa cho mỗi lần chạy harness ASan/UBSan (mặc định 30)")
     parser.add_argument("--out", type=Path, help="Thư mục xuất kết quả (mặc định results/<tên đặc tả>)")
     parser.add_argument("--no-tools", action="store_true", help="Bỏ qua biên dịch/ASan/cppcheck")
     parser.add_argument("--compare", metavar="SPEC_V1",
@@ -228,13 +239,14 @@ def main(argv: list[str] | None = None) -> int:
 
     spec = load_specification(args.spec)
     out = args.out or Path("results") / spec.name
-    rep = run_pipeline(spec, args.seed, args.budget, run_tools=not args.no_tools, workdir=out / "build")
+    opts = {"run_tools": not args.no_tools, "bmc_depth": args.bmc_depth,
+            "sanitizer_timeout": args.sanitizer_timeout}
+    rep = run_pipeline(spec, args.seed, args.budget, workdir=out / "build", **opts)
     write_results(rep, out)
     if args.compare:
         fixed = load_specification(args.compare)
         fixed_out = out.parent / fixed.name
-        fixed_rep = run_pipeline(fixed, args.seed, args.budget, run_tools=not args.no_tools,
-                                 workdir=fixed_out / "build")
+        fixed_rep = run_pipeline(fixed, args.seed, args.budget, workdir=fixed_out / "build", **opts)
         write_results(fixed_rep, fixed_out)
         (out / "comparison.md").write_text(comparison_markdown(rep, fixed_rep), encoding="utf-8")
         print(f"Đã ghi so sánh thiết kế vào {out / 'comparison.md'}")

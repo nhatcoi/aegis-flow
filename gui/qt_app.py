@@ -3,11 +3,14 @@
 Every analysis goes through ``core.pipeline.run_pipeline`` (run on a worker
 thread), so the GUI shows exactly what the CLI exports to ``results/``.
 
-Layout: one-line toolbar (spec picker, chapter stepper, run/export) · requirement
-and test-case sidebar · chapter tabs · detail inspector · collapsible log.
+Layout: toolbar (spec picker, run-parameter popover, run/export) · sidebar with
+requirement/test-case tabs · overview + chapter tabs whose icons carry the result ·
+contextual detail inspector · log hidden behind a status-bar toggle.
 """
 from __future__ import annotations
 
+import html
+import re
 import sys
 import tempfile
 import traceback
@@ -17,18 +20,22 @@ import qdarktheme
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFontDatabase
+from PyQt6.QtGui import QAction, QColor, QFontDatabase, QIcon, QPainter, QPixmap, QTextCursor, QTextFormat
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -39,40 +46,120 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QTabWidget,
     QTextBrowser,
+    QTextEdit,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
+from core import ai_explain
 from core.codegen import format_code_with_line_numbers
+from core.diagnosis import diagnose, related_requirements
 from core.kripke import KripkeStructure
 from core.pipeline import PipelineReport, run_pipeline
-from core.reporter import BMC_VI, STATUS_VI, generate_markdown_report, write_results
+from core.reporter import BMC_VI, STATUS_VI, before_after_table, generate_markdown_report, write_results
 from core.spec_loader import Specification, load_specification
 
+from .spec_draft_dialog import SpecDraftDialog
 from .theme import TOKENS, stylesheet
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SPEC_DIRS = [BASE_DIR / "dataset" / "specs_excel", BASE_DIR / "dataset" / "specs"]
+DRAFT_DIR = BASE_DIR / "dataset" / "drafts"
+SPEC_DIRS = [BASE_DIR / "dataset" / "specs_excel", BASE_DIR / "dataset" / "specs", DRAFT_DIR]
 DEFAULT_SPEC = BASE_DIR / "dataset" / "specs_excel" / "payment_gateway_v0_spec.xlsx"
-STEPS = [("ch1", "Kripke/CTL"), ("ch2", "Bộ nhớ C"), ("ch3", "SMT/BMC"), ("ch4", "Fuzzing"), ("cwe", "CWE")]
+# step key -> (tab index, tab title); tab 0 is the overview
+STEPS = {"ch1": (1, "Ch.1 Kripke"), "ch2": (2, "Ch.2 Bộ nhớ"), "ch3": (3, "Ch.3 SMT/BMC"),
+         "ch4": (4, "Ch.4 Fuzzing"), "cwe": (5, "CWE")}
+# overview card key -> (caption, tab to open on click; None = test-case list in the sidebar)
+CARDS = {"ctl": ("thuộc tính CTL vi phạm", 1), "bmc": ("thuộc tính BMC UNSAFE", 3),
+         "fuzz": ("lần fuzz tìm ra lỗi trên v0", 4), "cwe": ("lỗ hổng có bằng chứng", 5),
+         "tc": ("test case PASS", None)}
+GUIDE = """\
+## AegisFlow làm gì?
+
+Từ **một file đặc tả**, tool chạy qua 4 chương. Mỗi lỗi báo ra đều kèm **bằng chứng do công cụ sinh ra**.
+**v0** là thiết kế còn lỗi, **v1** là thiết kế đã sửa.
+
+- **Ch.1 Kripke/CTL**: vẽ sơ đồ mọi trạng thái của đơn hàng, rồi kiểm tra trên **mọi đường đi** xem có \
+vi phạm luật nào không. *Ví dụ:* timeout mà vẫn giao hàng khi chưa thu tiền.
+- **(Bước chuẩn bị) Sinh mã**: từ đặc tả, sinh ra mỗi hàm 2 bản: **v0** cài sẵn lỗi, **v1** đã vá.
+- **Ch.2 Bộ nhớ**: quét mã tìm lỗi bộ nhớ, rồi **chạy thật với ASan** để xác nhận. \
+*Ví dụ:* tràn bộ đệm, giải phóng bộ nhớ hai lần.
+- **Ch.3 SMT/BMC**: dùng **Z3 chứng minh bằng toán học**. BMC tìm đường đi lỗi trong k bước. SMT tìm giá trị \
+làm tràn số, và chứng minh bản vá đúng với **mọi** đầu vào (UNSAT).
+- **Ch.4 Fuzzing**: tự sinh thật nhiều input để tìm input làm hàm lỗi. Ngẫu nhiên thì không tìm ra cửa hậu, \
+còn **concolic** đọc điều kiện trong code nên tìm ra ngay.
+
+### Tham số (nút ⚙)
+
+- **Timeout sanitizer**: thời gian tối đa cho mỗi lần chạy ASan/UBSan.
+- **Độ sâu k (BMC)**: số bước tối đa Z3 được thử. *Auto* = chạy tới CT, nên kết luận chắc chắn.
+- **Seed**: khởi tạo bộ sinh ngẫu nhiên của fuzzer. Cùng seed thì kết quả giống hệt.
+- **Ngân sách / chiến lược**: số lần thử tối đa cho mỗi chiến lược fuzzing.
+
+### Đọc kết quả
+
+- Chấm trên tab: **đỏ** = có lỗi, **xanh** = đạt; số bên cạnh là số lỗi tìm được.
+- Bấm một dòng để xem **phản ví dụ, chẩn đoán và log thô** ở panel Chi tiết.
+- *✨ Giải thích bằng AI* chỉ để diễn giải, **không phải bằng chứng**.
+"""
+PARAM_DEFAULTS = {"seed": 1, "budget": 2000, "bmc": -1, "timeout": 30}
 
 
 class PipelineWorker(QObject):
     finished = pyqtSignal(object)
     failed = pyqtSignal(str)
 
-    def __init__(self, spec: Specification, seed: int, budget: int):
+    def __init__(self, spec: Specification, seed: int, budget: int, **options):
         super().__init__()
-        self.spec, self.seed, self.budget = spec, seed, budget
+        self.spec, self.seed, self.budget, self.options = spec, seed, budget, options
 
     def run(self) -> None:
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                rep = run_pipeline(self.spec, self.seed, self.budget, workdir=Path(tmp))
+                rep = run_pipeline(self.spec, self.seed, self.budget, workdir=Path(tmp), **self.options)
             self.finished.emit(rep)
         except Exception:  # noqa: BLE001 - reported to the user in the log panel
             self.failed.emit(traceback.format_exc())
+
+
+class AIWorker(QObject):
+    finished = pyqtSignal(str, str)  # (context, answer)
+    failed = pyqtSignal(str)
+
+    def __init__(self, cfg: ai_explain.AIConfig, context: str):
+        super().__init__()
+        self.cfg, self.context = cfg, context
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(self.context, ai_explain.explain(self.cfg, self.context))
+        except Exception as e:  # noqa: BLE001 - shown in the AI panel
+            self.failed.emit(str(e))
+
+
+def _tone(text: str) -> str | None:
+    """Colour key for a status cell. Bad words are checked first: "UNSAFE" contains "SAFE"."""
+    t = text.upper()
+    if "CHƯA ĐẠT CT" in t:
+        return "warn"  # safe only up to k: not a violation, not a proof either
+    if any(k in t for k in ("UNSAFE", "VI PHẠM", "DETECTED", "FAIL", "CHƯA", "LỖI", "CÓ THỂ TRÀN")):
+        return "fail"
+    if any(k in t for k in ("UNSAT", "ĐẠT", "SAFE", "SẠCH", "CLEAN", "PASS", "0 FINDING", "ĐÃ VÁ", "KHÔNG")):
+        return "pass"
+    if re.search(r"\bSAT\b", t):
+        return "fail"
+    return None
+
+
+def _raw(text: str, limit: int = 4000) -> str:
+    """Raw tool output block for the inspector."""
+    text = text.strip()
+    if len(text) > limit:
+        text = text[:limit] + f"\n… (cắt bớt, còn {len(text) - limit} ký tự trong results/logs/)"
+    return f"<p><b>Log thô</b></p><pre>{html.escape(text) or '—'}</pre>"
 
 
 def _table(headers: list[str]) -> QTableWidget:
@@ -86,6 +173,29 @@ def _table(headers: list[str]) -> QTableWidget:
     t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     t.horizontalHeader().setStretchLastSection(True)
     return t
+
+
+def _dot_icon(color: str) -> QIcon:
+    pm = QPixmap(14, 14)
+    pm.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(3, 3, 8, 8)
+    painter.end()
+    return QIcon(pm)
+
+
+def _spin(lo: int, hi: int, value: int, *, step: int = 1, suffix: str = "", tip: str = "") -> QSpinBox:
+    spn = QSpinBox()
+    spn.setRange(lo, hi)
+    spn.setSingleStep(step)
+    spn.setValue(value)
+    spn.setSuffix(suffix)
+    spn.setToolTip(tip)
+    spn.setMinimumWidth(110)
+    return spn
 
 
 def _section(text: str) -> QLabel:
@@ -105,6 +215,11 @@ class MainWindow(QMainWindow):
         self.report: PipelineReport | None = None
         self.model: KripkeStructure | None = None
         self.thread: QThread | None = None
+        self.highlight: tuple[list[str] | None, list[str] | None] = (None, None)
+        self.ai_cfg = ai_explain.load_config()
+        self.ai_thread: QThread | None = None
+        self.ai_cache: dict[str, str] = {}
+        self._orphan_threads: list = []  # AI requests still running after their dialog closed
         self.mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
 
         self._build_toolbar()
@@ -129,32 +244,22 @@ class MainWindow(QMainWindow):
         act_open = QAction("Mở…", self)
         act_open.triggered.connect(self._browse)
         tb.addAction(act_open)
+        act_draft = QAction("✨ Đặc tả AI…", self)
+        act_draft.setToolTip("Mô tả hệ thống bằng lời, AI tạo đặc tả JSON nháp để đọc lại, sửa và chạy thử")
+        act_draft.triggered.connect(self._open_spec_draft)
+        tb.addAction(act_draft)
         tb.addSeparator()
-
-        self.step_labels: dict[str, QLabel] = {}
-        for key, text in STEPS:
-            lbl = QLabel()
-            self.step_labels[key] = lbl
-            tb.addWidget(lbl)
-        self._reset_steps()
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         tb.addWidget(spacer)
 
-        tb.addWidget(QLabel("Seed"))
-        self.spn_seed = QSpinBox()
-        self.spn_seed.setFixedWidth(64)
-        self.spn_seed.setRange(0, 10_000)
-        self.spn_seed.setValue(1)
-        tb.addWidget(self.spn_seed)
-        tb.addWidget(QLabel("Fuzz"))
-        self.spn_budget = QSpinBox()
-        self.spn_budget.setFixedWidth(84)
-        self.spn_budget.setRange(100, 100_000)
-        self.spn_budget.setSingleStep(500)
-        self.spn_budget.setValue(2000)
-        tb.addWidget(self.spn_budget)
+        self.btn_params = QToolButton()
+        self.btn_params.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_params.setToolTip("Tham số chạy pipeline")
+        self.btn_params.setMenu(self._params_menu())
+        tb.addWidget(self.btn_params)
+        self._update_params_label()
 
         self.btn_run = QPushButton("▶  Chạy pipeline")
         self.btn_run.setObjectName("primary")
@@ -165,6 +270,10 @@ class MainWindow(QMainWindow):
         self.btn_export.setEnabled(False)
         self.btn_export.clicked.connect(self._export)
         tb.addWidget(self.btn_export)
+        act_guide = QAction("ⓘ", self)
+        act_guide.setToolTip("Hướng dẫn đọc kết quả: 4 chương làm gì")
+        act_guide.triggered.connect(self._show_guide)
+        tb.addAction(act_guide)
         act_theme = QAction("◐", self)
         act_theme.setToolTip("Đổi giao diện sáng/tối")
         act_theme.triggered.connect(self._toggle_theme)
@@ -185,24 +294,28 @@ class MainWindow(QMainWindow):
         self.lbl_spec.setObjectName("metric")
         sl.addWidget(_section("Đặc tả"))
         sl.addWidget(self.lbl_spec)
-        sl.addWidget(_section("Yêu cầu"))
-        self.lst_req = QListWidget()
-        self.lst_req.itemClicked.connect(lambda it: self._inspect(it.data(Qt.ItemDataRole.UserRole)))
-        sl.addWidget(self.lst_req, 3)
-        sl.addWidget(_section("Test case"))
-        self.lst_tc = QListWidget()
-        self.lst_tc.itemClicked.connect(lambda it: self._inspect(it.data(Qt.ItemDataRole.UserRole)))
-        sl.addWidget(self.lst_tc, 2)
+        self.side_tabs = QTabWidget()
+        self.side_tabs.setDocumentMode(True)
+        self.lst_req, self.lst_tc = QListWidget(), QListWidget()
+        for lst, title in ((self.lst_req, "Yêu cầu"), (self.lst_tc, "Test case")):
+            lst.setWordWrap(True)
+            lst.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            lst.setResizeMode(QListWidget.ResizeMode.Adjust)
+            lst.setSpacing(2)
+            lst.itemClicked.connect(lambda it: self._inspect(it.data(Qt.ItemDataRole.UserRole)))
+            self.side_tabs.addTab(lst, title)
+        sl.addWidget(self.side_tabs, 1)
         main.addWidget(side)
 
         # Tabs
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(self._tab_kripke(), "Ch.1 Kripke/CTL")
-        self.tabs.addTab(self._tab_code(), "Ch.2 Mã và bộ nhớ")
+        self.tabs.addTab(self._tab_overview(), "Tổng quan")
+        self.tabs.addTab(self._tab_kripke(), "Ch.1 Kripke")
+        self.tabs.addTab(self._tab_code(), "Ch.2 Bộ nhớ")
         self.tabs.addTab(self._tab_smt(), "Ch.3 SMT/BMC")
         self.tabs.addTab(self._tab_fuzz(), "Ch.4 Fuzzing")
-        self.tabs.addTab(self._tab_cwe(), "Lỗ hổng CWE")
+        self.tabs.addTab(self._tab_cwe(), "CWE")
         self.txt_report = QTextBrowser()
         self.tabs.addTab(self.txt_report, "Báo cáo")
         main.addWidget(self.tabs)
@@ -214,28 +327,167 @@ class MainWindow(QMainWindow):
         il.addWidget(_section("Chi tiết"))
         self.inspector = QTextBrowser()
         self.inspector.setOpenExternalLinks(False)
-        il.addWidget(self.inspector)
+        il.addWidget(self.inspector, 3)
+        self.btn_ai = QPushButton("✨  Giải thích bằng AI")
+        self.btn_ai.setEnabled(False)
+        self.btn_ai.setToolTip(f"Gửi nội dung đang xem tới {self.ai_cfg.base_url} (model {self.ai_cfg.model}) "
+                               "để diễn giải" if self.ai_cfg.enabled
+                               else "Chưa cấu hình API key (AEGIS_AI_KEY / OPENAI_API_KEY trong .env)")
+        self.btn_ai.clicked.connect(self._ask_ai)
+        il.addWidget(self.btn_ai)
+        self.ai_box = QTextBrowser()
+        self.ai_box.setVisible(False)
+        il.addWidget(self.ai_box, 2)
         main.addWidget(insp)
-        main.setSizes([270, 900, 300])
+        main.setSizes([290, 900, 290])
         main.setStretchFactor(1, 1)
 
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setFont(self.mono)
         outer.addWidget(self.log)
-        outer.setSizes([780, 110])
-        outer.setCollapsible(1, True)
+        outer.setSizes([760, 160])
+        self.log.setVisible(False)
         self.setCentralWidget(outer)
+
+        self.btn_log = QToolButton()
+        self.btn_log.setText("Log")
+        self.btn_log.setCheckable(True)
+        self.btn_log.setToolTip("Hiện/ẩn log chi tiết")
+        self.btn_log.toggled.connect(self.log.setVisible)
+        self.statusBar().addPermanentWidget(self.btn_log)
+
+    def _params_menu(self) -> QMenu:
+        menu = QMenu(self)
+        host = QWidget()
+        form = QFormLayout(host)
+        form.setContentsMargins(14, 10, 14, 10)
+        self.spn_timeout = _spin(1, 600, PARAM_DEFAULTS["timeout"], suffix=" s",
+                                 tip="Thời gian tối đa cho mỗi lần chạy harness ASan/UBSan")
+        self.spn_bmc = _spin(-1, 100, PARAM_DEFAULTS["bmc"],
+                             tip="Độ sâu tối đa của BMC. Auto = completeness threshold (đường kính khả đạt);\n"
+                                 "k nhỏ hơn CT chỉ cho kết luận 'an toàn đến độ sâu k'.")
+        self.spn_bmc.setSpecialValueText("Auto (CT)")
+        self.spn_seed = _spin(0, 10_000, PARAM_DEFAULTS["seed"],
+                              tip="Seed ngẫu nhiên của fuzzer black-box và coverage-guided (tái tạo kết quả)")
+        self.spn_budget = _spin(100, 100_000, PARAM_DEFAULTS["budget"], step=500,
+                                tip="Số vòng lặp tối đa cho mỗi chiến lược fuzzing (black-box, coverage, concolic)")
+        for title, label, spn in (("Ch.2 · Bộ nhớ C", "Timeout sanitizer", self.spn_timeout),
+                                  ("Ch.3 · BMC", "Độ sâu k", self.spn_bmc),
+                                  ("Ch.4 · Fuzzing", "Seed", self.spn_seed),
+                                  (None, "Ngân sách / chiến lược", self.spn_budget)):
+            if title:
+                form.addRow(_section(title))
+            form.addRow(label, spn)
+            spn.valueChanged.connect(self._update_params_label)
+        btn_reset = QPushButton("Khôi phục mặc định")
+        btn_reset.clicked.connect(self._reset_params)
+        form.addRow(btn_reset)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(host)
+        menu.addAction(action)
+        return menu
+
+    def _open_spec_draft(self) -> None:
+        dlg = SpecDraftDialog(self.ai_cfg, self.mode, self)
+        dlg.saved.connect(self._on_draft_saved)
+        dlg.exec()
+
+    def _on_draft_saved(self, path: str) -> None:
+        idx = self.cbo_spec.findData(path)
+        if idx < 0:
+            self.cbo_spec.addItem(self._spec_label(Path(path)), path)
+            idx = self.cbo_spec.count() - 1
+        self.cbo_spec.setCurrentIndex(idx)
+        self._log(f"Đã lưu bản nháp AI: {path}")
+
+    @staticmethod
+    def _spec_label(f: Path) -> str:
+        return f"{f.stem}  ·  {f.suffix[1:]}" + ("  ·  nháp AI" if f.parent == DRAFT_DIR else "")
+
+    def _show_guide(self) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Hướng dẫn đọc kết quả")
+        dlg.resize(640, 620)
+        lay = QVBoxLayout(dlg)
+        text = QTextBrowser()
+        text.setMarkdown(GUIDE)
+        lay.addWidget(text)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+        dlg.exec()
+
+    def _reset_params(self) -> None:
+        self.spn_seed.setValue(PARAM_DEFAULTS["seed"])
+        self.spn_budget.setValue(PARAM_DEFAULTS["budget"])
+        self.spn_bmc.setValue(PARAM_DEFAULTS["bmc"])
+        self.spn_timeout.setValue(PARAM_DEFAULTS["timeout"])
+
+    def _bmc_depth(self) -> int | None:
+        return None if self.spn_bmc.value() < 0 else self.spn_bmc.value()
+
+    def _update_params_label(self) -> None:
+        k = self._bmc_depth()
+        self.btn_params.setText(f"⚙  seed {self.spn_seed.value()} · fuzz {self.spn_budget.value()} · "
+                                f"k {'auto' if k is None else k} · {self.spn_timeout.value()}s")
+
+    def _tab_overview(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(16, 14, 16, 12)
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.cards: dict[str, tuple[QLabel, QLabel]] = {}
+        for key, (caption, tab) in CARDS.items():
+            card = QPushButton()
+            card.setObjectName("card")
+            card.setMinimumHeight(92)
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            cl = QVBoxLayout(card)
+            value, cap = QLabel("—"), QLabel(caption)
+            value.setObjectName("cardValue")
+            cap.setObjectName("cardCaption")
+            cap.setWordWrap(True)
+            for lbl in (value, cap):
+                lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+                cl.addWidget(lbl)
+            card.clicked.connect(lambda _=False, t=tab: self.tabs.setCurrentIndex(t) if t is not None
+                                 else self.side_tabs.setCurrentIndex(1))
+            row.addWidget(card)
+            self.cards[key] = (value, cap)
+        lay.addLayout(row)
+        self.txt_overview = QTextBrowser()
+        lay.addWidget(self.txt_overview, 1)
+        return w
+
+    def _set_card(self, key: str, value: str, state: str) -> None:
+        lbl, _ = self.cards[key]
+        lbl.setText(value)
+        lbl.setStyleSheet(f"color: {TOKENS[self.mode][state]};")
 
     def _tab_kripke(self) -> QWidget:
         w = QSplitter(Qt.Orientation.Vertical)
+        top = QWidget()
+        tl = QVBoxLayout(top)
+        tl.setContentsMargins(8, 6, 8, 0)
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("Luồng"))
+        self.cbo_flow = QComboBox()
+        self.cbo_flow.setMinimumWidth(260)
+        self.cbo_flow.currentIndexChanged.connect(lambda _: self._draw_model(*self.highlight))
+        bar.addWidget(self.cbo_flow)
+        bar.addStretch()
+        tl.addLayout(bar)
         self.figure = Figure(figsize=(7, 4.5), dpi=100)
         self.canvas = FigureCanvasQTAgg(self.figure)
-        w.addWidget(self.canvas)
+        self.canvas.setMinimumHeight(340)
+        tl.addWidget(self.canvas, 1)
+        w.addWidget(top)
         self.tbl_ctl = _table(["Thuộc tính", "Kết quả", "Phản ví dụ"])
         self.tbl_ctl.itemSelectionChanged.connect(self._on_ctl_selected)
         w.addWidget(self.tbl_ctl)
-        w.setSizes([480, 220])
+        w.setSizes([560, 220])
         return w
 
     def _tab_code(self) -> QWidget:
@@ -264,12 +516,14 @@ class MainWindow(QMainWindow):
             split.addWidget(holder)
         lay.addWidget(split, 3)
         self.tbl_mem = _table(["Hàm", "Bản", "Công cụ", "Kết quả"])
+        self.tbl_mem.itemSelectionChanged.connect(self._on_mem_selected)
         lay.addWidget(self.tbl_mem, 2)
         return w
 
     def _tab_smt(self) -> QWidget:
         w = QSplitter(Qt.Orientation.Vertical)
         self.tbl_bmc = _table(["Thuộc tính (BMC)", "Kết luận", "k", "CT", "Phản ví dụ"])
+        self.tbl_bmc.itemSelectionChanged.connect(self._on_bmc_selected)
         self.tbl_smt = _table(["Kiểm tra", "Tràn int32", "Model", "Wrap 32-bit", "Sau vá"])
         self.tbl_smt.itemSelectionChanged.connect(self._on_smt_selected)
         self.tbl_ast = _table(["Hàm", "Bản", "McCabe", "Lồng", "Điều kiện"])
@@ -291,15 +545,21 @@ class MainWindow(QMainWindow):
     def _color(self, key: str) -> QColor:
         return QColor(TOKENS[self.mode][key])
 
-    def _set_step(self, key: str, state: str) -> None:
+    def _set_step(self, key: str, state: str, count: int | None = None) -> None:
         dot = {"idle": "idle", "pass": "pass", "fail": "fail", "run": "warn"}[state]
-        text = dict(STEPS)[key]
-        self.step_labels[key].setText(
-            f"<span style='color:{TOKENS[self.mode][dot]}'>●</span> {text}")
+        idx, title = STEPS[key]
+        self.tabs.setTabIcon(idx, _dot_icon(TOKENS[self.mode][dot]))
+        self.tabs.setTabText(idx, f"{title}  {count}" if count else title)
 
     def _reset_steps(self) -> None:
-        for key, _ in STEPS:
+        for key in STEPS:
             self._set_step(key, "idle")
+        for key in CARDS:
+            self._set_card(key, "—", "muted")
+        self.txt_overview.setMarkdown(
+            "### Chưa có kết quả\n\nChỉnh **⚙ tham số** nếu cần rồi bấm **▶ Chạy pipeline**. "
+            "Sau khi chạy, trang này tóm tắt kết quả 4 chương và bảng trước/sau (v0 → v1); "
+            "bấm vào một thẻ để mở chương tương ứng.")
 
     def _fill(self, table: QTableWidget, rows: list[list[object]], status_col: int | None = None) -> None:
         table.setRowCount(0)
@@ -308,25 +568,56 @@ class MainWindow(QMainWindow):
             for c, value in enumerate(row):
                 item = QTableWidgetItem("" if value is None else str(value))
                 if c == status_col:
-                    text = str(value).upper()
-                    good = any(k in text for k in ("ĐẠT", "SAFE", "SẠCH", "CLEAN", "PASS", "UNSAT", "0 FINDING", "ĐÃ VÁ"))
-                    bad = any(k in text for k in ("VI PHẠM", "UNSAFE", "DETECTED", "FAIL", "CHƯA", "SAT", "LỖI"))
-                    if good:
-                        item.setForeground(self._color("pass"))
-                    elif bad:
-                        item.setForeground(self._color("fail"))
+                    tone = _tone(str(value))
+                    if tone:
+                        item.setForeground(self._color(tone))
                 table.setItem(r, c, item)
 
-    def _inspect(self, html: str | None) -> None:
-        self.inspector.setHtml(html or "")
+    def _inspect(self, content: str | None) -> None:
+        self.inspector.setHtml(content or "")
+        self.ai_box.setVisible(False)
+        self.btn_ai.setEnabled(self.ai_cfg.enabled and bool(content) and self.ai_thread is None)
+
+    def _ask_ai(self) -> None:
+        spec = f"Đặc tả: {self.spec.name}. {self.spec.description}\n\n" if self.spec else ""
+        context = spec + self.inspector.toPlainText()
+        self.ai_box.setVisible(True)
+        if context in self.ai_cache:
+            self._on_ai_done(context, self.ai_cache[context])
+            return
+        self.ai_box.setMarkdown(f"_Đang hỏi model `{self.ai_cfg.model}`…_")
+        self.btn_ai.setEnabled(False)
+        self.ai_thread = QThread()
+        self.ai_worker = AIWorker(self.ai_cfg, context)
+        self.ai_worker.moveToThread(self.ai_thread)
+        self.ai_thread.started.connect(self.ai_worker.run)
+        self.ai_worker.finished.connect(self._on_ai_done)
+        self.ai_worker.failed.connect(self._on_ai_failed)
+        self.ai_worker.finished.connect(self.ai_thread.quit)
+        self.ai_worker.failed.connect(self.ai_thread.quit)
+        self.ai_thread.finished.connect(self._on_ai_thread_finished)
+        self.ai_thread.start()
+
+    def _on_ai_thread_finished(self) -> None:
+        self.ai_thread = None
+        self.btn_ai.setEnabled(self.ai_cfg.enabled and bool(self.inspector.toPlainText()))
+
+    def _on_ai_done(self, context: str, answer: str) -> None:
+        self.ai_cache[context] = answer
+        self.ai_box.setMarkdown(f"**Diễn giải bởi AI ({self.ai_cfg.model}), không phải bằng chứng.** "
+                                f"Kết luận chính thức là phần phía trên.\n\n{answer}")
+
+    def _on_ai_failed(self, error: str) -> None:
+        self.ai_box.setMarkdown(f"**Không gọi được AI.**\n\n{error}")
 
     def _log(self, text: str) -> None:
         self.log.appendPlainText(text)
 
     def _draw_model(self, violations: list[str] | None = None, path: list[str] | None = None) -> None:
+        self.highlight = (violations, path)
         if self.model:
             self.model.draw_to_figure(self.figure, highlight_violations=violations, highlight_path=path,
-                                      dark=self.mode == "dark")
+                                      dark=self.mode == "dark", only=self.cbo_flow.currentData())
         else:
             self.figure.clear()
         self.canvas.draw()
@@ -336,7 +627,7 @@ class MainWindow(QMainWindow):
         self.cbo_spec.blockSignals(True)
         for folder in SPEC_DIRS:
             for f in sorted(folder.glob("*.xlsx")) + sorted(folder.glob("*.json")):
-                self.cbo_spec.addItem(f"{f.stem}  ·  {f.suffix[1:]}", str(f))
+                self.cbo_spec.addItem(self._spec_label(f), str(f))
         self.cbo_spec.blockSignals(False)
         idx = self.cbo_spec.findData(str(DEFAULT_SPEC))
         self.cbo_spec.setCurrentIndex(max(idx, 0))
@@ -345,7 +636,7 @@ class MainWindow(QMainWindow):
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Chọn đặc tả", str(BASE_DIR), "Đặc tả (*.json *.xlsx)")
         if path:
-            self.cbo_spec.addItem(f"{Path(path).stem}  ·  {Path(path).suffix[1:]}", path)
+            self.cbo_spec.addItem(self._spec_label(Path(path)), path)
             self.cbo_spec.setCurrentIndex(self.cbo_spec.count() - 1)
 
     def _on_spec_changed(self) -> None:
@@ -370,13 +661,25 @@ class MainWindow(QMainWindow):
                               f"{len(s.arithmetic_checks)} kiểm tra số học · {len(s.test_cases)} test case")
         self.lst_req.clear()
         for r in s.requirements:
-            item = QListWidgetItem(f"{r.id}  ·  {r.priority}  ·  {r.category}")
+            item = QListWidgetItem(f"{r.id}  ·  {r.priority}  ·  {r.category}\n{r.text}")
             item.setToolTip(r.text)
             item.setData(Qt.ItemDataRole.UserRole, f"<h3>{r.id}</h3><p><b>{r.category} · {r.priority}</b></p><p>{r.text}</p>")
             self.lst_req.addItem(item)
         self._fill_test_cases()
         self.model = KripkeStructure.from_state_machine(sm, s.name) if sm and sm.states else None
+        self.cbo_flow.blockSignals(True)
+        self.cbo_flow.clear()
+        if self.model:
+            comps = sorted(self.model.components(), key=len, reverse=True)
+            for comp in comps:
+                self.cbo_flow.addItem(f"{comp[0]} → … ({len(comp)} trạng thái)", comp)
+            if len(comps) > 1:
+                self.cbo_flow.addItem("Tất cả luồng", None)
+        self.cbo_flow.setEnabled(self.cbo_flow.count() > 1)
+        self.cbo_flow.blockSignals(False)
         self._draw_model()
+        self._fill(self.tbl_ctl, [[p, "chưa chạy", "Bấm ▶ Chạy pipeline để kiểm chứng"]
+                                  for p in s.safety_properties])
         self.cbo_fn.blockSignals(True)
         self.cbo_fn.clear()
         self.cbo_fn.blockSignals(False)
@@ -391,8 +694,8 @@ class MainWindow(QMainWindow):
         results = {t.test_case.id: t for t in self.report.test_results} if self.report else {}
         for tc in self.spec.test_cases:
             res = results.get(tc.id)
-            status = res.status if res else "chưa chạy"
-            item = QListWidgetItem(f"{tc.id}  ·  {status}  ·  {tc.title}")
+            mark = {"PASS": "✓", "FAIL": "✗"}.get(res.status, "?") if res else "○"
+            item = QListWidgetItem(f"{mark}  {tc.id}  {tc.title}")
             if res:
                 item.setForeground(self._color({"PASS": "pass", "FAIL": "fail"}.get(res.status, "muted")))
             steps = "".join(f"<li>{st}</li>" for st in tc.steps)
@@ -408,12 +711,15 @@ class MainWindow(QMainWindow):
         if not self.spec or self.thread:
             return
         self.btn_run.setEnabled(False)
-        for key, _ in STEPS:
+        for key in STEPS:
             self._set_step(key, "run")
-        self._log(f"Chạy pipeline (seed={self.spn_seed.value()}, fuzz={self.spn_budget.value()})…")
+        bmc_depth = self._bmc_depth()
+        self._log(f"Chạy pipeline (seed={self.spn_seed.value()}, fuzz={self.spn_budget.value()}, "
+                  f"BMC k={'auto' if bmc_depth is None else bmc_depth}, timeout={self.spn_timeout.value()}s)…")
         self.statusBar().showMessage("Đang chạy pipeline…")
         self.thread = QThread()
-        self.worker = PipelineWorker(self.spec, self.spn_seed.value(), self.spn_budget.value())
+        self.worker = PipelineWorker(self.spec, self.spn_seed.value(), self.spn_budget.value(),
+                                     bmc_depth=bmc_depth, sanitizer_timeout=self.spn_timeout.value())
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._on_done)
@@ -430,20 +736,41 @@ class MainWindow(QMainWindow):
     def _on_failed(self, tb: str) -> None:
         self._reset_steps()
         self._log(tb)
+        self.btn_log.setChecked(True)
         self.statusBar().showMessage("Pipeline lỗi — xem log.")
 
     def _on_done(self, rep: PipelineReport) -> None:
         self.report = rep
         self.btn_export.setEnabled(True)
         k = rep.kripke
-        self._set_step("ch1", "idle" if not k else ("pass" if k.is_valid else "fail"))
+        ctl_fail = [r for r in (k.property_results if k else []) if r.status != "pass"]
+        self._set_step("ch1", "idle" if not k else ("fail" if ctl_fail else "pass"), len(ctl_fail))
         v0_static = [f for (_, v), fs in rep.static.items() if v == "v0" for f in fs]
-        self._set_step("ch2", "fail" if v0_static or any(s.status == "detected" and s.version == "v0"
-                                                         for s in rep.sanitizers) else "pass")
-        self._set_step("ch3", "fail" if any(b.status == "unsafe" for b in rep.bmc)
-                       or any(s.overflow_possible and s.patch_status != "unsat" for s in rep.smt) else "pass")
-        self._set_step("ch4", "fail" if any(r.found and r.version == "v0" for r in rep.fuzz) else "pass")
-        self._set_step("cwe", "fail" if rep.audit.open_findings else "pass")
+        v0_san = [s for s in rep.sanitizers if s.status == "detected" and s.version == "v0"]
+        self._set_step("ch2", "fail" if v0_static or v0_san else "pass", len(v0_static) + len(v0_san))
+        unsafe = [b for b in rep.bmc if b.status == "unsafe"]
+        smt_open = [s for s in rep.smt if s.overflow_possible and s.patch_status != "unsat"]
+        self._set_step("ch3", "fail" if unsafe or smt_open else "pass", len(unsafe) + len(smt_open))
+        fuzz_hits = [r for r in rep.fuzz if r.found and r.version == "v0"]
+        self._set_step("ch4", "fail" if fuzz_hits else "pass", len(fuzz_hits))
+        self._set_step("cwe", "fail" if rep.audit.open_findings else "pass", len(rep.audit.confirmed))
+
+        n_ctl = len(k.property_results) if k else 0
+        passed = sum(t.status == "PASS" for t in rep.test_results)
+        self._set_card("ctl", f"{len(ctl_fail)} / {n_ctl}", "fail" if ctl_fail else "pass")
+        self._set_card("bmc", f"{len(unsafe)} / {len(rep.bmc)}", "fail" if unsafe else "pass")
+        self._set_card("fuzz", f"{len(fuzz_hits)} / {sum(r.version == 'v0' for r in rep.fuzz)}",
+                       "fail" if fuzz_hits else "pass")
+        self._set_card("cwe", f"{len(rep.audit.confirmed)}", "fail" if rep.audit.open_findings else "pass")
+        self._set_card("tc", f"{passed} / {len(rep.test_results)}",
+                       "pass" if passed == len(rep.test_results) else "fail")
+        k_text = "tự động (CT)" if rep.bmc and all(b.max_bound == b.completeness_threshold for b in rep.bmc) \
+            else ", ".join(sorted({str(b.max_bound) for b in rep.bmc})) or "—"
+        self.txt_overview.setMarkdown("\n".join(
+            [f"### {rep.spec.name}: {len(rep.audit.open_findings)} lỗ hổng chưa vá", "",
+             (f"Seed {rep.seed} · fuzz {rep.fuzz_budget}/chiến lược · BMC k = {k_text} · "
+              f"chạy {sum(rep.timings.values()):.1f}s"), "", "#### Bảng trước / sau (v0 → v1)", ""]
+            + before_after_table(rep)))
 
         # Ch.1
         rows = []
@@ -477,6 +804,9 @@ class MainWindow(QMainWindow):
         self._fill(self.tbl_smt, [[s.name, "có thể tràn" if s.overflow_possible else "không", s.overflow_values or "—",
                                    s.wrapped_value if s.bv_overflow else "—", s.patch_status.upper()]
                                   for s in rep.smt], status_col=4)
+        for r in range(self.tbl_smt.rowCount()):  # the overflow column is a verdict too
+            item = self.tbl_smt.item(r, 1)
+            item.setForeground(self._color(_tone(item.text()) or "muted"))
         self._fill(self.tbl_ast, [[m.name, v, m.cyclomatic, m.nesting_depth, "; ".join(m.conditions) or "—"]
                                   for v, m in rep.metrics])
 
@@ -493,7 +823,6 @@ class MainWindow(QMainWindow):
         self.txt_report.setMarkdown(generate_markdown_report(rep).replace("![Kripke](figures/kripke.png)", ""))
         self._fill_test_cases()
 
-        passed = sum(t.status == "PASS" for t in rep.test_results)
         msg = (f"Xong: {len(rep.audit.confirmed)} lỗ hổng có bằng chứng, {len(rep.audit.open_findings)} chưa vá · "
                f"test case {passed}/{len(rep.test_results)} PASS · {sum(rep.timings.values()):.1f}s")
         self.statusBar().showMessage(msg)
@@ -508,11 +837,28 @@ class MainWindow(QMainWindow):
         results = self.report.kripke.property_results
         if 0 <= row < len(results):
             r = results[row]
+            focus = (r.counterexample_path or r.violation_states or [None])[0]
+            for i in range(self.cbo_flow.count()):
+                states = self.cbo_flow.itemData(i)
+                if focus and states and focus in states:
+                    self.cbo_flow.blockSignals(True)
+                    self.cbo_flow.setCurrentIndex(i)
+                    self.cbo_flow.blockSignals(False)
+                    break
             self._draw_model(r.violation_states, r.counterexample_path)
             warn = "".join(f"<p style='color:{TOKENS[self.mode]['warn']}'>⚠ {w}</p>" for w in r.warnings)
             details = r.details.replace("\n", "<br>")
+            steps = "".join(
+                f"<li>{st}" + (" <i>(vòng lặp bắt đầu)</i>" if i == r.loop_start else "") + "</li>"
+                for i, st in enumerate(r.counterexample_path))
+            trace = f"<p><b>Phản ví dụ ({len(r.counterexample_path)} bước)</b></p><ol>{steps}</ol>" if steps else ""
+            diag = "".join(f"<li>{d}</li>" for d in diagnose(r, self.model))
+            diag = f"<p><b>Chẩn đoán</b></p><ul>{diag}</ul>" if diag else ""
+            reqs = related_requirements(r, self.spec)
+            req = ("<p><b>Yêu cầu liên quan</b> (truy vết qua test case)</p><ul>"
+                   + "".join(f"<li><b>{q.id}</b>: {q.text}</li>" for q in reqs) + "</ul>") if reqs else ""
             self._inspect(f"<h3>{r.formula or r.title}</h3><p><b>{STATUS_VI[r.status]}</b></p>"
-                          f"<p>{details}</p>{warn}")
+                          f"{trace}{diag}{req}{warn}<p>{details}</p>")
 
     def _on_fn_selected(self) -> None:
         if not self.report:
@@ -524,18 +870,79 @@ class MainWindow(QMainWindow):
             self.txt_v1.setPlainText(format_code_with_line_numbers(gf.code_safe))
             self._inspect(f"<h3>{gf.spec.name}</h3><p>{gf.explanation}</p>")
 
+    def _on_mem_selected(self) -> None:
+        row = self.tbl_mem.currentRow()
+        if not self.report or row < 0:
+            return
+        static = list(self.report.static.items())
+        if row < len(static):
+            (name, version), findings = static[row]
+            self._show_code(name, version, [f.line for f in findings])
+            items = "".join(f"<li><b>{f.rule}</b> ({f.cwe}, {f.severity}) dòng {f.line}: {html.escape(f.message)}"
+                            f"<br><code>{html.escape(f.code)}</code></li>" for f in findings)
+            self._inspect(f"<h3>{name} · {version} · Static scanner</h3>"
+                          + (f"<ul>{items}</ul>" if items else "<p>0 finding.</p>"))
+        elif row - len(static) < len(self.report.sanitizers):
+            s = self.report.sanitizers[row - len(static)]
+            self._show_code(s.function, s.version, [ln for _, _, ln in s.detections if ln])
+            hits = "".join(f"<li>{kind} ({cwe}) dòng {ln}</li>" for kind, cwe, ln in s.detections)
+            self._inspect(f"<h3>{s.function} · {s.version} · ASan/UBSan</h3><p><b>{s.status}</b> · "
+                          f"mã thoát {s.returncode}</p><p><b>Input:</b> {html.escape(s.input_desc)}</p>"
+                          + (f"<ul>{hits}</ul>" if hits else "") + (f"<p>{html.escape(s.note)}</p>" if s.note else "")
+                          + f"<p><b>Lệnh:</b> <code>{html.escape(s.command)}</code></p>" + _raw(s.log))
+
+    def _show_code(self, function: str, version: str, lines: list[int]) -> None:
+        """Switch the code panes to `function` and highlight `lines` in the given version."""
+        idx = next((i for i, gf in enumerate(self.report.functions) if gf.spec.name == function), -1)
+        if idx < 0:
+            return
+        self.cbo_fn.blockSignals(True)
+        self.cbo_fn.setCurrentIndex(idx)
+        self.cbo_fn.blockSignals(False)
+        gf = self.report.functions[idx]
+        self.txt_v0.setPlainText(format_code_with_line_numbers(gf.code_vulnerable))
+        self.txt_v1.setPlainText(format_code_with_line_numbers(gf.code_safe))
+        box = self.txt_v0 if version == "v0" else self.txt_v1
+        other = self.txt_v1 if box is self.txt_v0 else self.txt_v0
+        other.setExtraSelections([])
+        marks = []
+        for ln in lines:
+            block = box.document().findBlockByNumber(ln - 1)
+            if not block.isValid():
+                continue
+            sel = QTextEdit.ExtraSelection()
+            color = self._color("fail")
+            color.setAlpha(70)
+            sel.format.setBackground(color)
+            sel.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+            sel.cursor = QTextCursor(block)
+            marks.append(sel)
+        box.setExtraSelections(marks)
+        if marks:
+            box.setTextCursor(marks[0].cursor)
+            box.centerCursor()
+
+    def _on_bmc_selected(self) -> None:
+        row = self.tbl_bmc.currentRow()
+        if self.report and 0 <= row < len(self.report.bmc):
+            b = self.report.bmc[row]
+            self._inspect(f"<h3>BMC: {html.escape(b.property)}</h3><p><b>{BMC_VI[b.status]}</b></p>"
+                          + _raw(b.to_text()))
+
     def _on_smt_selected(self) -> None:
         row = self.tbl_smt.currentRow()
         if self.report and 0 <= row < len(self.report.smt):
-            self._inspect("<p>" + self.report.smt[row].details.replace("\n", "<br>") + "</p>")
+            s = self.report.smt[row]
+            self._inspect(f"<h3>SMT: {s.name}</h3>" + _raw(s.details))
 
     def _on_fuzz_selected(self) -> None:
         row = self.tbl_fuzz.currentRow()
         if self.report and 0 <= row < len(self.report.fuzz):
             r = self.report.fuzz[row]
-            events = "<br>".join(r.events[:40])
             self._inspect(f"<h3>{r.function} · {r.version} · {r.strategy}</h3>"
-                          f"<p>{r.hits}/{r.iterations} lần thử gây lỗi, {r.seconds * 1000:.1f} ms</p><p>{events}</p>")
+                          f"<p>{r.hits}/{r.iterations} lần thử gây lỗi, {r.seconds * 1000:.1f} ms</p>"
+                          f"<p><b>Lần đầu:</b> {r.first_hit or '—'} · <b>Input:</b> {r.first_input or '—'} · "
+                          f"<b>Loại:</b> {r.finding or '—'}</p>" + _raw("\n".join(r.events[:200])))
 
     def _on_cwe_selected(self) -> None:
         row = self.tbl_cwe.currentRow()
