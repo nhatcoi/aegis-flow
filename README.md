@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.11–3.13-3776AB?logo=python&logoColor=white)
 ![Z3](https://img.shields.io/badge/solver-Z3%204.16-8A2BE2)
 ![Qt](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-103%20passed-success)
+![Tests](https://img.shields.io/badge/tests-107%20passed-success)
 ![Course](https://img.shields.io/badge/CSE703093-An%20toàn%20phần%20mềm-orange)
 
 </div>
@@ -124,9 +124,16 @@ uv run python -m core.pipeline dataset/specs_excel/payment_gateway_v0_spec.xlsx 
 |---|---|
 | `--seed N` | Seed của fuzzer, giúp tái tạo kết quả (mặc định 1) |
 | `--budget N` | Số lần thử cho mỗi chiến lược fuzzing (mặc định 2000) |
+| `--bmc-depth K` | Độ sâu tối đa của BMC (mặc định = completeness threshold của mô hình) |
+| `--sanitizer-timeout S` | Thời gian tối đa (giây) cho mỗi lần chạy harness ASan/UBSan (mặc định 30) |
 | `--out DIR` | Thư mục xuất (mặc định `results/<tên đặc tả>`) |
 | `--compare SPEC` | Chạy thêm đặc tả đã sửa và ghi `comparison.md` |
 | `--no-tools` | Bỏ qua biên dịch, ASan, cppcheck |
+
+**Giải thích bằng AI (tùy chọn)**: trong panel Chi tiết, nút *✨ Giải thích bằng AI* gửi nội dung đang xem
+(phản ví dụ, chẩn đoán, log thô) tới một API tương thích OpenAI để diễn giải bằng lời. Cấu hình trong file `.env`
+(đã nằm trong `.gitignore`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` (hoặc `AEGIS_AI_*`). Phần diễn giải
+được gắn nhãn *không phải bằng chứng*, không ảnh hưởng tới kết luận PASS/FAIL, CWE hay thư mục `results/`.
 
 ## Kết quả trên đặc tả cổng thanh toán
 
@@ -160,6 +167,12 @@ của học phần, kèm một số mở rộng. Chi tiết:
 - [`dataset/specs_excel/FORMAT_EXCEL.md`](dataset/specs_excel/FORMAT_EXCEL.md): định dạng Excel, cú pháp CTL, giá trị cột `Loi`, các mẫu câu kết quả mong đợi được chấm tự động
 - [`dataset/specs/FORMAT.md`](dataset/specs/FORMAT.md): định dạng JSON tương đương
 - [`scripts/build_payment_specs.py`](scripts/build_payment_specs.py): ví dụ sinh cặp đặc tả v0/v1 bằng code
+
+**Bản nháp bằng AI (tùy chọn)**: nút *✨ Đặc tả AI…* trên thanh công cụ nhận mô tả hệ thống bằng lời và nhờ
+model tạo đặc tả JSON. Bản nháp được kiểm tra bằng chính bộ nạp đặc tả (trạng thái chưa khai báo, CTL sai cú pháp,
+nhãn không tồn tại, kind không có khuôn sinh mã, ngõ cụt) và xem trước sơ đồ Kripke trước khi lưu vào
+`dataset/drafts/` (kèm trường `_draft` ghi rõ do AI tạo). Bản nháp chỉ để thử nghiệm; đặc tả dùng cho báo cáo phải
+do nhóm viết.
 
 Các điểm khác so với tool gốc của môn học:
 
@@ -208,7 +221,7 @@ uv run pytest
 uv run ruff check core gui tests scripts main.py
 ```
 
-Bộ test gồm 103 test. Một số nhóm chính:
+Bộ test gồm 107 test. Một số nhóm chính:
 
 - **CTL**: kiểm tra từng toán tử; đối chiếu 30 mô hình ngẫu nhiên với bộ duyệt đường đi vét cạn; hồi quy cho lỗi `AG(!(a & b))` của phiên bản cũ.
 - **BMC**: phản ví dụ tối thiểu, đạt hoặc chưa đạt completeness threshold.
@@ -223,7 +236,7 @@ Bộ test gồm 103 test. Một số nhóm chính:
 core/        pipeline phân tích (ctl, kripke, bmc, codegen, c_analyzer, toolchain,
              static_ast, arithmetic_z3, fuzzing, cwe_analyzer, pipeline, reporter)
 gui/         giao diện PyQt6 (qt_app.py, theme.py)
-dataset/     đặc tả mẫu: specs/ (JSON) và specs_excel/ (Excel), kèm tài liệu định dạng
+dataset/     đặc tả payment_gateway v0/v1 (Excel: specs_excel/, JSON: specs/), flash_sale_inventory, tài liệu định dạng
 scripts/     build_payment_specs.py, package_submission.py
 results/     bằng chứng đã xuất cho payment_gateway_v0 / v1
 report/      báo cáo LaTeX (main.tex, sections/, figures/)

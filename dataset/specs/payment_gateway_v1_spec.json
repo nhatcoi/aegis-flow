@@ -1,0 +1,593 @@
+{
+  "name": "payment_gateway_v1",
+  "description": "Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời thanh toán (tạo đơn, chờ cổng, timeout, đối soát, thu tiền, giao hàng, hoàn tiền); khóa sổ cái dùng chung giữa worker xử lý webhook và worker đối soát; các hàm phân tích chữ ký webhook/mã đơn, ghi audit log, đóng phiên, giải phóng token thẻ; bộ đếm tổng tiền và giao dịch cần kiểm tra tràn số. Phiên bản v1: thiết kế đã sửa.",
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "text": "Chỉ được giao hàng (shipped) khi đơn đã được xác nhận thu tiền (paid)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-2",
+      "text": "Khi cổng thanh toán timeout, đơn cuối cùng phải được đối soát xong (paid hoặc failed), không chờ vô hạn",
+      "category": "liveness",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-3",
+      "text": "Worker webhook và worker đối soát không được đồng thời giữ khóa sổ cái (mutual exclusion)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-4",
+      "text": "Hệ thống không rơi vào deadlock khi tranh chấp khóa sổ cái hoặc khi hoàn tiền",
+      "category": "liveness",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-5",
+      "text": "Hàm parse_webhook_signature không được gây tràn bộ đệm khi nhận chữ ký từ webhook",
+      "category": "memory",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-6",
+      "text": "Hàm write_audit_log phải giải phóng bộ nhớ đã cấp phát cho mỗi bản ghi audit",
+      "category": "memory",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "REQ-7",
+      "text": "Hàm close_payment_session không được giải phóng cùng một con trỏ nhiều hơn một lần",
+      "category": "memory",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-8",
+      "text": "Hàm release_card_token_buffer không được truy cập bộ đệm token sau khi đã giải phóng",
+      "category": "memory",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-9",
+      "text": "Hàm calculate_total_payment không được để tổng tiền hàng + phí vận chuyển tràn int32",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-10",
+      "text": "Hàm refund_ratio không được lỗi khi tổng tiền đơn hàng bằng 0",
+      "category": "functional",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "REQ-11",
+      "text": "Không tồn tại mã bí mật hardcode cho phép vượt qua xác thực webhook hoặc PIN hỗ trợ",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-12",
+      "text": "Một đơn hàng không được ghi nhận thu tiền hai lần khi cổng gửi lại webhook (idempotency)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-13",
+      "text": "Mọi yêu cầu hoàn tiền cuối cùng phải hoàn tất (refunded)",
+      "category": "liveness",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "REQ-14",
+      "text": "Hàm parse_order_id chỉ chấp nhận mã đơn không vượt quá độ dài quy định",
+      "category": "memory",
+      "priority": "MEDIUM"
+    }
+  ],
+  "state_machine": {
+    "states": [
+      "ledger_free",
+      "webhook_holds",
+      "recon_holds",
+      "CREATED",
+      "PENDING",
+      "UNKNOWN",
+      "RECONCILING",
+      "SUCCEEDED",
+      "FAILED",
+      "SHIPPED",
+      "REFUNDING",
+      "REFUNDED"
+    ],
+    "initial": [
+      "ledger_free",
+      "CREATED"
+    ],
+    "labeling": {
+      "ledger_free": [
+        "safe"
+      ],
+      "webhook_holds": [
+        "webhook_locked"
+      ],
+      "recon_holds": [
+        "recon_locked"
+      ],
+      "CREATED": [
+        "created"
+      ],
+      "PENDING": [
+        "processing"
+      ],
+      "UNKNOWN": [
+        "timeout"
+      ],
+      "RECONCILING": [
+        "reconciling"
+      ],
+      "SUCCEEDED": [
+        "paid"
+      ],
+      "FAILED": [
+        "failed"
+      ],
+      "SHIPPED": [
+        "shipped",
+        "paid"
+      ],
+      "REFUNDING": [
+        "refunding"
+      ],
+      "REFUNDED": [
+        "refunded"
+      ]
+    },
+    "transitions": [
+      [
+        "ledger_free",
+        "webhook_holds"
+      ],
+      [
+        "ledger_free",
+        "recon_holds"
+      ],
+      [
+        "webhook_holds",
+        "ledger_free"
+      ],
+      [
+        "recon_holds",
+        "ledger_free"
+      ],
+      [
+        "CREATED",
+        "PENDING"
+      ],
+      [
+        "PENDING",
+        "SUCCEEDED"
+      ],
+      [
+        "PENDING",
+        "FAILED"
+      ],
+      [
+        "PENDING",
+        "UNKNOWN"
+      ],
+      [
+        "UNKNOWN",
+        "RECONCILING"
+      ],
+      [
+        "RECONCILING",
+        "SUCCEEDED"
+      ],
+      [
+        "RECONCILING",
+        "FAILED"
+      ],
+      [
+        "SUCCEEDED",
+        "SHIPPED"
+      ],
+      [
+        "SUCCEEDED",
+        "REFUNDING"
+      ],
+      [
+        "FAILED",
+        "PENDING"
+      ],
+      [
+        "FAILED",
+        "CREATED"
+      ],
+      [
+        "SHIPPED",
+        "SHIPPED"
+      ],
+      [
+        "REFUNDING",
+        "REFUNDED"
+      ],
+      [
+        "REFUNDED",
+        "REFUNDED"
+      ]
+    ]
+  },
+  "safety_properties": [
+    "AG(!violation)",
+    "safe -> EF(webhook_locked)",
+    "AG(shipped -> paid)",
+    "AG(timeout -> AF(paid | failed))",
+    "AG(!double_capture)",
+    "AG(!(processing & paid))",
+    "created -> EF(shipped)",
+    "AG(refunding -> AF(refunded))"
+  ],
+  "mutual_exclusion": [
+    {
+      "atom1": "webhook_locked",
+      "atom2": "recon_locked"
+    },
+    {
+      "atom1": "violation",
+      "atom2": "safe"
+    },
+    {
+      "atom1": "processing",
+      "atom2": "paid"
+    },
+    {
+      "atom1": "paid",
+      "atom2": "failed"
+    },
+    {
+      "atom1": "timeout",
+      "atom2": "paid"
+    }
+  ],
+  "functions": [
+    {
+      "name": "parse_webhook_signature",
+      "language": "c",
+      "kind": "buffer_copy",
+      "params": [
+        "raw_signature"
+      ],
+      "buffer_size": 65,
+      "bug": null,
+      "magic_values": []
+    },
+    {
+      "name": "parse_order_id",
+      "language": "c",
+      "kind": "buffer_copy",
+      "params": [
+        "raw_order_id"
+      ],
+      "buffer_size": 21,
+      "bug": null,
+      "magic_values": []
+    },
+    {
+      "name": "write_audit_log",
+      "language": "c",
+      "kind": "alloc_release",
+      "params": [],
+      "buffer_size": 64,
+      "bug": null,
+      "magic_values": []
+    },
+    {
+      "name": "close_payment_session",
+      "language": "c",
+      "kind": "alloc_release",
+      "params": [],
+      "buffer_size": 16,
+      "bug": null,
+      "magic_values": []
+    },
+    {
+      "name": "release_card_token_buffer",
+      "language": "c",
+      "kind": "alloc_release",
+      "params": [],
+      "buffer_size": 33,
+      "bug": null,
+      "magic_values": []
+    },
+    {
+      "name": "calculate_total_payment",
+      "language": "c",
+      "kind": "arithmetic",
+      "params": [
+        "amount",
+        "shipping_fee"
+      ],
+      "buffer_size": null,
+      "bug": null,
+      "magic_values": []
+    },
+    {
+      "name": "refund_ratio",
+      "language": "python",
+      "kind": "divide",
+      "params": [
+        "refund_amount",
+        "total_amount"
+      ],
+      "buffer_size": null,
+      "bug": "safe",
+      "magic_values": []
+    },
+    {
+      "name": "webhook_bypass_token",
+      "language": "python",
+      "kind": "magic_value",
+      "params": [
+        "header_token",
+        "secret_token"
+      ],
+      "buffer_size": null,
+      "bug": "safe",
+      "magic_values": [
+        7788,
+        9999
+      ]
+    },
+    {
+      "name": "support_override_pin",
+      "language": "python",
+      "kind": "magic_value",
+      "params": [
+        "pin_a",
+        "pin_b"
+      ],
+      "buffer_size": null,
+      "bug": "safe",
+      "magic_values": [
+        4821,
+        7306
+      ]
+    }
+  ],
+  "arithmetic_checks": [
+    {
+      "name": "order_total_counter",
+      "int_vars": [
+        "amount",
+        "shipping_fee"
+      ],
+      "condition": "amount >= 0 and shipping_fee >= 0 and amount + shipping_fee > 2000000000",
+      "overflow_expr": "amount + shipping_fee"
+    },
+    {
+      "name": "daily_transaction_counter",
+      "int_vars": [
+        "tx_today",
+        "tx_backlog"
+      ],
+      "condition": "tx_today >= 0 and tx_backlog >= 0 and tx_today + tx_backlog > 32767",
+      "overflow_expr": "tx_today + tx_backlog"
+    },
+    {
+      "name": "active_session_counter",
+      "int_vars": [
+        "active_sessions",
+        "pending_sessions"
+      ],
+      "condition": "active_sessions >= 0 and pending_sessions >= 0 and active_sessions + pending_sessions > 65535",
+      "overflow_expr": "active_sessions + pending_sessions"
+    },
+    {
+      "name": "refund_total_vnd",
+      "int_vars": [
+        "refunded_vnd",
+        "pending_refund_vnd"
+      ],
+      "condition": "refunded_vnd >= 0 and pending_refund_vnd >= 0 and refunded_vnd + pending_refund_vnd > 2000000000",
+      "overflow_expr": "refunded_vnd + pending_refund_vnd"
+    },
+    {
+      "name": "webhook_retry_counter",
+      "int_vars": [
+        "retries_today",
+        "retries_backlog"
+      ],
+      "condition": "retries_today >= 0 and retries_backlog >= 0 and retries_today + retries_backlog > 32767",
+      "overflow_expr": "retries_today + retries_backlog"
+    },
+    {
+      "name": "settlement_batch_bytes",
+      "int_vars": [
+        "batch_bytes",
+        "header_bytes"
+      ],
+      "condition": "batch_bytes >= 0 and header_bytes >= 0 and batch_bytes + header_bytes > 2000000000",
+      "overflow_expr": "batch_bytes + header_bytes"
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "requirement_ids": [
+        "REQ-3",
+        "REQ-4"
+      ],
+      "title": "Worker webhook và worker đối soát tranh chấp khóa sổ cái",
+      "preconditions": "Mô hình có cụm khóa ledger_free/webhook_holds/recon_holds",
+      "steps": [
+        "Dựng Kripke từ MoHinhTrangThai",
+        "Kiểm tra AG(!violation)",
+        "Kiểm tra deadlock"
+      ],
+      "expected_result": "AG(!violation) ĐÚNG và không có trạng thái deadlock",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-2",
+      "requirement_ids": [
+        "REQ-1"
+      ],
+      "title": "Không giao hàng khi chưa thu tiền",
+      "preconditions": "Đơn ở trạng thái UNKNOWN (cổng timeout)",
+      "steps": [
+        "Kiểm tra AG(shipped -> paid)",
+        "Nếu sai, đọc phản ví dụ"
+      ],
+      "expected_result": "AG(shipped -> paid) ĐÚNG",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-3",
+      "requirement_ids": [
+        "REQ-2"
+      ],
+      "title": "Timeout luôn được đối soát",
+      "preconditions": "Cổng không phản hồi",
+      "steps": [
+        "Kiểm tra AG(timeout -> AF(paid | failed))"
+      ],
+      "expected_result": "AG(timeout -> AF(paid | failed)) ĐÚNG",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-4",
+      "requirement_ids": [
+        "REQ-12",
+        "NFR-4"
+      ],
+      "title": "Cổng gửi lại webhook thu tiền",
+      "preconditions": "Đơn đã SUCCEEDED",
+      "steps": [
+        "Kiểm tra AG(!double_capture)"
+      ],
+      "expected_result": "AG(!double_capture) ĐÚNG",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-5",
+      "requirement_ids": [
+        "REQ-13"
+      ],
+      "title": "Hoàn tiền luôn hoàn tất",
+      "preconditions": "Đơn đã SUCCEEDED, khách yêu cầu hoàn tiền",
+      "steps": [
+        "Kiểm tra AG(refunding -> AF(refunded))"
+      ],
+      "expected_result": "AG(refunding -> AF(refunded)) ĐÚNG và không có trạng thái deadlock",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "TC-6",
+      "requirement_ids": [
+        "REQ-5",
+        "CON-1"
+      ],
+      "title": "Chữ ký webhook dài bất thường",
+      "preconditions": "Hàm parse_webhook_signature, bộ đệm 65 byte",
+      "steps": [
+        "Sinh mã C",
+        "Quét tĩnh",
+        "Biên dịch với ASan, gọi với chuỗi 520 ký tự"
+      ],
+      "expected_result": "Không phát hiện CWE-120 tại parse_webhook_signature",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-7",
+      "requirement_ids": [
+        "REQ-6",
+        "REQ-7",
+        "REQ-8"
+      ],
+      "title": "Vòng đời bộ nhớ audit log / phiên / token thẻ",
+      "preconditions": "Hàm write_audit_log, close_payment_session, release_card_token_buffer",
+      "steps": [
+        "Sinh mã C",
+        "Quét tĩnh",
+        "Chạy với ASan"
+      ],
+      "expected_result": "Không phát hiện CWE-401, CWE-415, CWE-416",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-8",
+      "requirement_ids": [
+        "REQ-9",
+        "CON-4"
+      ],
+      "title": "Tổng tiền vượt int32",
+      "preconditions": "Hàm calculate_total_payment",
+      "steps": [
+        "Sinh mã C",
+        "Biên dịch với UBSan, gọi với (INT_MAX, 1)"
+      ],
+      "expected_result": "Không phát hiện CWE-190 tại calculate_total_payment",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-9",
+      "requirement_ids": [
+        "REQ-9"
+      ],
+      "title": "Chứng minh tiền điều kiện chống tràn bằng Z3",
+      "preconditions": "Kiểm tra số học order_total_counter",
+      "steps": [
+        "Giải điều kiện tràn int32 bằng Z3",
+        "Thêm tiền điều kiện của bản vá, giải lại"
+      ],
+      "expected_result": "Z3 SAT cho order_total_counter khi chưa kiểm tra biên và UNSAT sau khi thêm tiền điều kiện",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "TC-10",
+      "requirement_ids": [
+        "REQ-10"
+      ],
+      "title": "Tỷ lệ hoàn tiền với tổng tiền bằng 0",
+      "preconditions": "Hàm refund_ratio",
+      "steps": [
+        "Chạy black-box, coverage-guided và concolic fuzzing"
+      ],
+      "expected_result": "Không crash (ZeroDivisionError) tại refund_ratio",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "TC-11",
+      "requirement_ids": [
+        "REQ-11",
+        "CON-6"
+      ],
+      "title": "Tìm mã bí mật bằng concolic fuzzing",
+      "preconditions": "Hàm webhook_bypass_token, support_override_pin",
+      "steps": [
+        "Chạy 3 chiến lược fuzzing với cùng ngân sách"
+      ],
+      "expected_result": "Không phát hiện CWE-798",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-12",
+      "requirement_ids": [
+        "REQ-14",
+        "CON-2"
+      ],
+      "title": "Mã đơn hợp lệ không bị báo lỗi nhầm",
+      "preconditions": "Hàm parse_order_id sinh không có lỗi",
+      "steps": [
+        "Sinh mã C",
+        "Quét tĩnh",
+        "Chạy với ASan"
+      ],
+      "expected_result": "Không phát hiện CWE-120 tại parse_order_id",
+      "priority": "MEDIUM"
+    }
+  ]
+}

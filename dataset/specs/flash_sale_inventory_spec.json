@@ -1,0 +1,273 @@
+{
+  "name": "flash_sale_inventory",
+  "description": "Nghiệp vụ Giữ kho Flash Sale & Trừ tồn kho E-Commerce: Đặt giữ hàng (Reserve 15 phút), chống bán vượt tồn kho (Overselling), chống khóa kho vĩnh viễn (Deadlock) và kiểm tra an toàn bộ đệm mã SKU/vạch.",
+  "requirements": [
+    {
+      "id": "REQ-1",
+      "text": "Kho chỉ được trừ tồn kho chính thức (deducted) khi đơn hàng đã đặt giữ chỗ hợp lệ (reserved)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-2",
+      "text": "Khi hết hạn 15 phút giữ chỗ (hold_timeout), số lượng hàng phải được tự động hoàn lại kho (released), không được khóa vô hạn",
+      "category": "liveness",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-3",
+      "text": "Hai tiến trình thanh toán không được đồng thời ghi đè số lượng tồn kho (chống overselling/race condition)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-4",
+      "text": "Hệ thống không được rơi vào deadlock khi nhiều người tranh chấp giữ món hàng cuối cùng",
+      "category": "liveness",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-5",
+      "text": "Hàm phân tích mã vạch sản phẩm (parse_sku_barcode) không được gây tràn bộ đệm (Buffer Overflow)",
+      "category": "memory",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-6",
+      "text": "Hàm giải phóng khóa giữ kho (release_stock_lock) không được sử dụng con trỏ sau khi đã free (Use After Free)",
+      "category": "memory",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-7",
+      "text": "Tổng số lượng tồn kho và lượng hàng nhập thêm không được tràn số nguyên 32-bit (Integer Overflow)",
+      "category": "safety",
+      "priority": "HIGH"
+    },
+    {
+      "id": "REQ-8",
+      "text": "Hàm tính tỷ lệ tồn kho bán ra (calc_stock_ratio) không được lỗi chia cho 0 khi kho ban đầu có 0 sản phẩm",
+      "category": "functional",
+      "priority": "MEDIUM"
+    },
+    {
+      "id": "REQ-9",
+      "text": "Không được tồn tại mã bí mật cho phép tài khoản bot bypass hàng đợi giữ kho",
+      "category": "safety",
+      "priority": "HIGH"
+    }
+  ],
+  "state_machine": {
+    "states": [
+      "AVAILABLE",
+      "LOCKING",
+      "RESERVED",
+      "TIMEOUT_HOLD",
+      "COMMITTED",
+      "RELEASED",
+      "OVER_SOLD"
+    ],
+    "initial": [
+      "AVAILABLE"
+    ],
+    "labeling": {
+      "AVAILABLE": [
+        "in_stock",
+        "safe"
+      ],
+      "LOCKING": [
+        "locking",
+        "processing"
+      ],
+      "RESERVED": [
+        "reserved"
+      ],
+      "TIMEOUT_HOLD": [
+        "timeout",
+        "violation"
+      ],
+      "COMMITTED": [
+        "deducted",
+        "safe"
+      ],
+      "RELEASED": [
+        "released",
+        "safe"
+      ],
+      "OVER_SOLD": [
+        "violation",
+        "oversold"
+      ]
+    },
+    "transitions": [
+      [
+        "AVAILABLE",
+        "LOCKING"
+      ],
+      [
+        "LOCKING",
+        "RESERVED"
+      ],
+      [
+        "LOCKING",
+        "AVAILABLE"
+      ],
+      [
+        "RESERVED",
+        "COMMITTED"
+      ],
+      [
+        "RESERVED",
+        "TIMEOUT_HOLD"
+      ],
+      [
+        "TIMEOUT_HOLD",
+        "RELEASED"
+      ],
+      [
+        "TIMEOUT_HOLD",
+        "OVER_SOLD"
+      ],
+      [
+        "RELEASED",
+        "AVAILABLE"
+      ],
+      [
+        "COMMITTED",
+        "COMMITTED"
+      ],
+      [
+        "OVER_SOLD",
+        "OVER_SOLD"
+      ]
+    ]
+  },
+  "safety_properties": [
+    "AG(!oversold)",
+    "AG(deducted -> !oversold)",
+    "AG(timeout -> AF(released | deducted))",
+    "AG(!violation)"
+  ],
+  "mutual_exclusion": [
+    {
+      "atom1": "oversold",
+      "atom2": "safe"
+    },
+    {
+      "atom1": "in_stock",
+      "atom2": "violation"
+    }
+  ],
+  "functions": [
+    {
+      "name": "parse_sku_barcode",
+      "language": "c",
+      "kind": "buffer_copy",
+      "params": [
+        "raw_barcode"
+      ],
+      "buffer_size": 32,
+      "bug": "buffer-overflow"
+    },
+    {
+      "name": "release_stock_lock",
+      "language": "c",
+      "kind": "alloc_release",
+      "params": [],
+      "buffer_size": 32,
+      "bug": "use-after-free"
+    },
+    {
+      "name": "calc_stock_ratio",
+      "language": "python",
+      "kind": "divide",
+      "params": [
+        "sold_count",
+        "total_stock"
+      ],
+      "bug": null
+    },
+    {
+      "name": "bot_bypass_token",
+      "language": "python",
+      "kind": "magic_value",
+      "params": [
+        "client_id",
+        "bot_pin"
+      ],
+      "magic_values": [
+        8888,
+        9999
+      ],
+      "bug": null
+    }
+  ],
+  "arithmetic_checks": [
+    {
+      "name": "total_warehouse_stock",
+      "int_vars": [
+        "current_stock",
+        "incoming_stock"
+      ],
+      "condition": "current_stock >= 0 and incoming_stock >= 0 and current_stock + incoming_stock > 2000000000",
+      "overflow_expr": "current_stock + incoming_stock"
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "TC-1",
+      "requirement_ids": [
+        "REQ-1",
+        "REQ-3"
+      ],
+      "title": "Kiểm tra chống bán vượt kho khi tranh chấp Flash Sale",
+      "preconditions": "Kho có 1 sản phẩm cuối cùng",
+      "steps": [
+        "Tiến trình 1 và 2 cùng gửi yêu cầu giữ hàng",
+        "Hệ thống khóa kho và xác thực"
+      ],
+      "expected_result": "AG(!oversold) ĐÚNG",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-2",
+      "requirement_ids": [
+        "REQ-2"
+      ],
+      "title": "Tự động nhả kho khi hết hạn 15 phút giữ chỗ",
+      "preconditions": "Khách đặt giữ chỗ nhưng không thanh toán",
+      "steps": [
+        "Đơn chuyển sang TIMEOUT_HOLD",
+        "Worker quét đơn timeout sau 15 phút"
+      ],
+      "expected_result": "AG(timeout -> AF(released | deducted)) ĐÚNG",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-3",
+      "requirement_ids": [
+        "REQ-5"
+      ],
+      "title": "Kiểm tra tràn bộ đệm mã vạch sản phẩm",
+      "preconditions": "Nhập chuỗi mã SKU độc hại dài hơn 32 ký tự",
+      "steps": [
+        "Gọi parse_sku_barcode với 128 byte"
+      ],
+      "expected_result": "Không phát hiện CWE-120 tại parse_sku_barcode",
+      "priority": "HIGH"
+    },
+    {
+      "id": "TC-4",
+      "requirement_ids": [
+        "REQ-9"
+      ],
+      "title": "Tìm mã bí mật bot bypass hàng đợi Flash Sale",
+      "preconditions": "Fuzzing hàm bot_bypass_token",
+      "steps": [
+        "Concolic fuzzing kiểm tra path condition"
+      ],
+      "expected_result": "tìm thấy input (8888, 9999)",
+      "priority": "HIGH"
+    }
+  ]
+}

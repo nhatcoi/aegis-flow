@@ -173,7 +173,7 @@ def _failing_trace(rep: PipelineReport) -> tuple[list[str], list[str]]:
 
 def save_kripke_png(rep: PipelineReport, path: Path) -> None:
     violations, trace = _failing_trace(rep)
-    fig = Figure(figsize=(8, 5.5), dpi=150)
+    fig = Figure(figsize=(10, 7.5), dpi=150)
     rep.kripke_model.draw_to_figure(fig, highlight_violations=violations, highlight_path=trace)
     fig.savefig(path, bbox_inches="tight")
 

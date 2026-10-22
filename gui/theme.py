@@ -27,6 +27,12 @@ def stylesheet(mode: str) -> str:
     QTableWidget {{ gridline-color: {t['border']}; }}
     QHeaderView::section {{ padding: 4px 6px; font-weight: 600; }}
     QTabBar::tab {{ padding: 6px 14px; }}
+    QPushButton#card {{ text-align: left; background: {t['panel']}; border: 1px solid {t['border']};
+                        border-radius: 8px; padding: 10px 14px; }}
+    QPushButton#card:hover {{ border-color: {ACCENT}; }}
+    QLabel#cardValue {{ font-size: 26px; font-weight: 600; }}
+    QLabel#cardCaption {{ color: {t['muted']}; }}
+    QListWidget::item {{ padding: 4px 2px; }}
     QSplitter::handle {{ background: {t['border']}; }}
     QSplitter::handle:horizontal {{ width: 1px; }}
     QSplitter::handle:vertical {{ height: 1px; }}

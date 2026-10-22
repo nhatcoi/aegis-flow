@@ -8,6 +8,7 @@ data/
 *.zip
 *.pyc
 .DS_Store
+*.code-workspace
 
 # Evidence exported by core.pipeline is part of the submission
 !results/**/*.log
@@ -15,3 +16,6 @@ data/
 # Course materials (large, copyrighted) — kept locally only
 An toàn phần mềm-*_TaiLieu/
 dist/
+
+# Local secrets (AI API key)
+.env
