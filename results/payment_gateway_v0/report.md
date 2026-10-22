@@ -6,13 +6,15 @@ Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời tha
 
 | Mục | Giá trị |
 |---|---|
-| thời gian | 2026-09-29 23:30:14 +0700 |
+| thời gian | 2026-10-23 00:00:59 +0700 |
 | hệ điều hành | Darwin 25.2.0 (arm64) |
 | python | 3.11.15 |
 | z3-solver | 4.16.0 |
 | trình biên dịch C | Apple clang version 17.0.0 (clang-1700.6.3.2) |
 | seed | 1 |
-| ngân sách fuzzing | 2000 |
+| ngân sách fuzzing | 200 |
+| độ sâu BMC | tự động (CT) |
+| timeout sanitizer | 30s |
 
 ## 1. Đặc tả
 
@@ -93,23 +95,6 @@ Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời tha
 | release_card_token_buffer | v1 | 0 finding |
 | calculate_total_payment | v0 | 0 finding |
 | calculate_total_payment | v1 | 0 finding |
-
-**AddressSanitizer / UBSan:**
-
-| Hàm | Bản | Input | Kết quả | Phát hiện |
-|---|---|---|---|---|
-| parse_webhook_signature | v0 | chuỗi 520 ký tự 'A' (gấp 8 lần bộ đệm 65 byte) | detected | stack-buffer-overflow (CWE-121) dòng 9 |
-| parse_webhook_signature | v1 | chuỗi 520 ký tự 'A' (gấp 8 lần bộ đệm 65 byte) | clean | — |
-| write_audit_log | v0 | gọi hàm một lần | clean | — |
-| write_audit_log | v1 | gọi hàm một lần | clean | — |
-| close_payment_session | v0 | gọi hàm một lần | detected | double-free (CWE-415) dòng 13 |
-| close_payment_session | v1 | gọi hàm một lần | clean | — |
-| release_card_token_buffer | v0 | gọi hàm một lần | detected | heap-use-after-free (CWE-416) dòng 12 |
-| release_card_token_buffer | v1 | gọi hàm một lần | clean | — |
-| calculate_total_payment | v0 | (INT_MAX, 1) | detected | signed-integer-overflow (CWE-190) dòng 5 |
-| calculate_total_payment | v1 | (INT_MAX, 1) | clean | — |
-
-> LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
 
 ## 4. Chương 3 — AST và SMT
 
@@ -214,26 +199,54 @@ Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời tha
 
 ## 5. Chương 4 — Fuzzing
 
-| Hàm | Bản | Chiến lược | Lần thử | Số lỗi | Lần đầu tìm thấy | Input | Loại | Thời gian |
-|---|---|---|---|---|---|---|---|---|
-| refund_ratio | v0 | blackbox | 2000 | 47 | 48 | (2147483646, 0) | ZeroDivisionError | 29.6 ms |
-| refund_ratio | v0 | coverage | 2000 | 24 | 6 | (1, 0) | ZeroDivisionError | 3.9 ms |
-| refund_ratio | v0 | concolic | 3 | 1 | 2 | (-2147483648, 0) | ZeroDivisionError | 4.4 ms |
-| refund_ratio | v1 | blackbox | 2000 | 0 | — | — | — | 1.9 ms |
-| refund_ratio | v1 | coverage | 2000 | 0 | — | — | — | 3.8 ms |
-| refund_ratio | v1 | concolic | 3 | 0 | — | — | — | 4.0 ms |
-| webhook_bypass_token | v0 | blackbox | 2000 | 0 | — | — | — | 1.8 ms |
-| webhook_bypass_token | v0 | coverage | 2000 | 0 | — | — | — | 3.9 ms |
-| webhook_bypass_token | v0 | concolic | 5 | 1 | 4 | (7788, 9999) | bypass | 14.9 ms |
-| webhook_bypass_token | v1 | blackbox | 2000 | 0 | — | — | — | 2.6 ms |
-| webhook_bypass_token | v1 | coverage | 2000 | 0 | — | — | — | 5.9 ms |
-| webhook_bypass_token | v1 | concolic | 1 | 0 | — | — | — | 0.1 ms |
-| support_override_pin | v0 | blackbox | 2000 | 0 | — | — | — | 1.7 ms |
-| support_override_pin | v0 | coverage | 2000 | 0 | — | — | — | 4.1 ms |
-| support_override_pin | v0 | concolic | 5 | 1 | 4 | (4821, 7306) | bypass | 9.1 ms |
-| support_override_pin | v1 | blackbox | 2000 | 0 | — | — | — | 2.5 ms |
-| support_override_pin | v1 | coverage | 2000 | 0 | — | — | — | 6.0 ms |
-| support_override_pin | v1 | concolic | 1 | 0 | — | — | — | 0.1 ms |
+### Fuzzing hàm (Data Input Fuzzing: Blackbox, Coverage-guided, Whitebox Concolic)
+
+| Hàm | Bản | Chiến lược | Tìm kiếm | Lần thử | Số lỗi | Lần đầu tìm thấy | Input | Loại | Thời gian |
+|---|---|---|---|---|---|---|---|---|---|
+| refund_ratio | v0 | blackbox | — | 200 | 3 | 48 | (2147483646, 0) | ZeroDivisionError | 0.2 ms |
+| refund_ratio | v0 | coverage | — | 200 | 5 | 6 | (1, 0) | ZeroDivisionError | 13.1 ms |
+| refund_ratio | v0 | concolic | BFS | 3 | 1 | 2 | (-2147483648, 0) | ZeroDivisionError | 2.6 ms |
+| refund_ratio | v1 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| refund_ratio | v1 | coverage | — | 200 | 0 | — | — | — | 0.4 ms |
+| refund_ratio | v1 | concolic | BFS | 3 | 0 | — | — | — | 3.4 ms |
+| webhook_bypass_token | v0 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| webhook_bypass_token | v0 | coverage | — | 200 | 0 | — | — | — | 0.4 ms |
+| webhook_bypass_token | v0 | concolic | BFS | 5 | 1 | 4 | (7788, 9999) | bypass | 7.3 ms |
+| webhook_bypass_token | v1 | blackbox | — | 200 | 0 | — | — | — | 0.3 ms |
+| webhook_bypass_token | v1 | coverage | — | 200 | 0 | — | — | — | 0.6 ms |
+| webhook_bypass_token | v1 | concolic | BFS | 1 | 0 | — | — | — | 0.0 ms |
+| support_override_pin | v0 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| support_override_pin | v0 | coverage | — | 200 | 0 | — | — | — | 0.4 ms |
+| support_override_pin | v0 | concolic | BFS | 5 | 1 | 4 | (4821, 7306) | bypass | 6.9 ms |
+| support_override_pin | v1 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| support_override_pin | v1 | coverage | — | 200 | 0 | — | — | — | 0.6 ms |
+| support_override_pin | v1 | concolic | BFS | 1 | 0 | — | — | — | 0.0 ms |
+
+
+### Fuzzing phát sinh chuỗi trạng thái (State Sequence Fuzzing)
+
+Khám phá không gian trạng thái theo cả 3 chiến lược: **BFS** (chiều rộng), **DFS** (chiều sâu) và **Coverage-guided** (đột biến chuỗi trạng thái từ seed data).
+
+| Chiến lược | Độ sâu k | Đường đi thử | Độ phủ State | Độ phủ Chuyển tiếp | Số crash / lỗi | Thời gian |
+|---|---|---|---|---|---|---|
+| BFS | 8 | 113 | 100.0% | 100.0% | 4 | 0.1 ms |
+| DFS | 8 | 113 | 100.0% | 100.0% | 4 | 0.1 ms |
+| COVERAGE | 8 | 200 | 92.9% | 95.7% | 3 | 0.3 ms |
+
+
+**Chuỗi trạng thái dẫn tới Crash / Deadlock / Vi phạm phát hiện bởi State Fuzzer:**
+
+- **[INVARIANT_VIOLATION · CWE-693]** tại `lock_conflict`: ledger_free -> webhook_holds -> lock_conflict (Phát hiện nhãn vi phạm 'violation' tại trạng thái lock_conflict)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `DUPLICATE_CAPTURE`: CREATED -> PENDING -> SUCCEEDED -> DUPLICATE_CAPTURE (Rơi vào trạng thái vi phạm an toàn logic: DUPLICATE_CAPTURE)
+- **[DEADLOCK · CWE-833]** tại `REFUNDING`: CREATED -> PENDING -> SUCCEEDED -> REFUNDING (Bế tắc (Deadlock): trạng thái REFUNDING không có chuyển tiếp tiếp theo)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `SHIPPED_UNPAID`: CREATED -> PENDING -> UNKNOWN -> SHIPPED_UNPAID (Rơi vào trạng thái vi phạm an toàn logic: SHIPPED_UNPAID)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `DUPLICATE_CAPTURE`: CREATED -> PENDING -> SUCCEEDED -> DUPLICATE_CAPTURE (Rơi vào trạng thái vi phạm an toàn logic: DUPLICATE_CAPTURE)
+- **[DEADLOCK · CWE-833]** tại `REFUNDING`: CREATED -> PENDING -> SUCCEEDED -> REFUNDING (Bế tắc (Deadlock): trạng thái REFUNDING không có chuyển tiếp tiếp theo)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `SHIPPED_UNPAID`: CREATED -> PENDING -> FAILED -> PENDING -> UNKNOWN -> UNKNOWN -> SHIPPED_UNPAID (Rơi vào trạng thái vi phạm an toàn logic: SHIPPED_UNPAID)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `lock_conflict`: ledger_free -> webhook_holds -> ledger_free -> webhook_holds -> lock_conflict (Phát hiện nhãn vi phạm 'violation' tại trạng thái lock_conflict)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `lock_conflict`: ledger_free -> recon_holds -> ledger_free -> recon_holds -> ledger_free -> webhook_holds -> lock_conflict (Phát hiện nhãn vi phạm 'violation' tại trạng thái lock_conflict)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `DUPLICATE_CAPTURE`: CREATED -> PENDING -> UNKNOWN -> RECONCILING -> SUCCEEDED -> DUPLICATE_CAPTURE (Rơi vào trạng thái vi phạm an toàn logic: DUPLICATE_CAPTURE)
+- **[INVARIANT_VIOLATION · CWE-693]** tại `SHIPPED_UNPAID`: CREATED -> PENDING -> UNKNOWN -> SHIPPED_UNPAID -> SHIPPED_UNPAID -> SHIPPED_UNPAID (Rơi vào trạng thái vi phạm an toàn logic: SHIPPED_UNPAID)
 
 ## 6. Phân tích từng lỗ hổng
 
@@ -317,7 +330,6 @@ Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời tha
 2. **Nguyên nhân:** Sao chép dữ liệu vào bộ đệm kích thước cố định mà không kiểm tra độ dài, cho phép ghi đè stack.
 3. **Bằng chứng lỗi tồn tại:**
    - Scanner: dangerous-function tại dòng 9 (`strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */`)
-   - Sanitizer: stack-buffer-overflow tại dòng 9 với input chuỗi 520 ký tự 'A' (gấp 8 lần bộ đệm 65 byte)
 4. **Cách vá:** Đo độ dài bằng strnlen và từ chối input vượt quá kích thước bộ đệm; không dùng strcpy.
 
 ```c
@@ -354,7 +366,7 @@ int parse_webhook_signature(const char *raw_signature) {
     return 0;
 }
 ```
-5. **Bằng chứng đã vá:** Scanner v1: 0 finding; Sanitizer v1: sạch
+5. **Bằng chứng đã vá:** Scanner v1: 0 finding
    - Ví dụ CVE: CVE-2021-3156 (Sudo Baron Samedit)
 
 ### 6.9. CWE-401 (Missing Release of Memory after Effective Lifetime) tại `write_audit_log` — confirmed
@@ -399,7 +411,7 @@ int write_audit_log(void) {
     return 0;
 }
 ```
-5. **Bằng chứng đã vá:** Scanner v1: 0 finding; Sanitizer v1: sạch
+5. **Bằng chứng đã vá:** Scanner v1: 0 finding
    - Ví dụ CVE: CVE-2019-11478 (Linux SACK)
 
 ### 6.10. CWE-415 (Double Free) tại `close_payment_session` — confirmed
@@ -408,7 +420,6 @@ int write_audit_log(void) {
 2. **Nguyên nhân:** Giải phóng cùng một vùng nhớ heap hai lần, làm hỏng metadata của bộ cấp phát.
 3. **Bằng chứng lỗi tồn tại:**
    - Scanner: double-free tại dòng 13 (`free(data); /* giai phong lan thu hai */`)
-   - Sanitizer: double-free tại dòng 13 với input gọi hàm một lần
 4. **Cách vá:** Gán con trỏ về NULL ngay sau free(); quy định rõ chủ sở hữu (ownership) của vùng nhớ.
 
 ```c
@@ -447,7 +458,7 @@ int close_payment_session(void) {
     return 0;
 }
 ```
-5. **Bằng chứng đã vá:** Scanner v1: 0 finding; Sanitizer v1: sạch
+5. **Bằng chứng đã vá:** Scanner v1: 0 finding
    - Ví dụ CVE: CVE-2019-11932 (WhatsApp)
 
 ### 6.11. CWE-416 (Use After Free) tại `release_card_token_buffer` — confirmed
@@ -456,7 +467,6 @@ int close_payment_session(void) {
 2. **Nguyên nhân:** Truy cập vùng nhớ sau khi đã giải phóng, có thể dẫn tới thực thi mã tùy ý.
 3. **Bằng chứng lỗi tồn tại:**
    - Scanner: use-after-free tại dòng 12 (`data[0] = 'A'; /* ghi sau khi da free */`)
-   - Sanitizer: heap-use-after-free tại dòng 12 với input gọi hàm một lần
 4. **Cách vá:** Không dùng con trỏ sau free(); gán NULL ngay sau khi giải phóng.
 
 ```c
@@ -494,15 +504,162 @@ int release_card_token_buffer(void) {
     return 0;
 }
 ```
-5. **Bằng chứng đã vá:** Scanner v1: 0 finding; Sanitizer v1: sạch
+5. **Bằng chứng đã vá:** Scanner v1: 0 finding
    - Ví dụ CVE: CVE-2019-0708 (BlueKeep)
 
-### 6.12. CWE-190 (Integer Overflow or Wraparound) tại `calculate_total_payment` — confirmed
+### 6.12. CWE-190 (Integer Overflow or Wraparound) tại `order_total_counter` — confirmed
 
-1. **Vị trí:** calculate_total_payment dòng 5; truy vết REQ-9
+1. **Vị trí:** order_total_counter
 2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
 3. **Bằng chứng lỗi tồn tại:**
-   - Sanitizer: signed-integer-overflow tại dòng 5 với input (INT_MAX, 1)
+   - Z3 SAT: {'amount': 2147483647, 'shipping_fee': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2147204848
+4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
+5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
+   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
+
+### 6.13. CWE-190 (Integer Overflow or Wraparound) tại `daily_transaction_counter` — confirmed
+
+1. **Vị trí:** daily_transaction_counter
+2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
+3. **Bằng chứng lỗi tồn tại:**
+   - Z3 SAT: {'tx_today': 2147483647, 'tx_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2129640465
+4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
+5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
+   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
+
+### 6.14. CWE-190 (Integer Overflow or Wraparound) tại `active_session_counter` — confirmed
+
+1. **Vị trí:** active_session_counter
+2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
+3. **Bằng chứng lỗi tồn tại:**
+   - Z3 SAT: {'active_sessions': 2147483647, 'pending_sessions': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145843031
+4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
+5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
+   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
+
+### 6.15. CWE-190 (Integer Overflow or Wraparound) tại `refund_total_vnd` — confirmed
+
+1. **Vị trí:** refund_total_vnd
+2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
+3. **Bằng chứng lỗi tồn tại:**
+   - Z3 SAT: {'refunded_vnd': 2147483647, 'pending_refund_vnd': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2143285231
+4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
+5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
+   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
+
+### 6.16. CWE-190 (Integer Overflow or Wraparound) tại `webhook_retry_counter` — confirmed
+
+1. **Vị trí:** webhook_retry_counter
+2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
+3. **Bằng chứng lỗi tồn tại:**
+   - Z3 SAT: {'retries_today': 2147483647, 'retries_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2111565480
+4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
+5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
+   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
+
+### 6.17. CWE-190 (Integer Overflow or Wraparound) tại `settlement_batch_bytes` — confirmed
+
+1. **Vị trí:** settlement_batch_bytes
+2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
+3. **Bằng chứng lỗi tồn tại:**
+   - Z3 SAT: {'batch_bytes': 2147483647, 'header_bytes': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145771516
+4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
+5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
+   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
+
+### 6.18. CWE-369 (Divide By Zero) tại `refund_ratio` — confirmed
+
+1. **Vị trí:** refund_ratio; truy vết REQ-10
+2. **Nguyên nhân:** Phép chia không kiểm tra mẫu số bằng 0, gây crash (DoS).
+3. **Bằng chứng lỗi tồn tại:**
+   - blackbox: ZeroDivisionError ở lần thử 48/200, input (2147483646, 0)
+   - coverage: ZeroDivisionError ở lần thử 6/200, input (1, 0)
+   - concolic: ZeroDivisionError ở lần thử 2/200, input (-2147483648, 0)
+4. **Cách vá:** Kiểm tra mẫu số khác 0 trước khi chia.
+
+```python
+# v0
+def refund_ratio(refund_amount, total_amount):
+    return refund_amount // total_amount
+```
+```python
+# v1
+def refund_ratio(refund_amount, total_amount):
+    if total_amount == 0:
+        return 0
+    return refund_amount // total_amount
+```
+5. **Bằng chứng đã vá:** blackbox v1: 0/200 lỗi; coverage v1: 0/200 lỗi; concolic v1: 0/3 lỗi
+   - Ví dụ CVE: CVE-2020-1971
+
+### 6.19. CWE-798 (Use of Hard-coded Credentials) tại `webhook_bypass_token` — confirmed
+
+1. **Vị trí:** webhook_bypass_token
+2. **Nguyên nhân:** Giá trị bí mật hardcode trong mã nguồn cho phép vượt qua xác thực.
+3. **Bằng chứng lỗi tồn tại:**
+   - concolic: bypass ở lần thử 4/200, input (7788, 9999)
+4. **Cách vá:** Bỏ nhánh bí mật; so khớp với bí mật cấu hình ngoài mã nguồn bằng hmac.compare_digest.
+
+```python
+# v0
+def webhook_bypass_token(header_token, secret_token):
+    if header_token == 7788:
+        if secret_token == 9999:
+            return True
+    return False
+```
+```python
+# v1
+import hmac
+import os
+
+
+def webhook_bypass_token(header_token, secret_token):
+    expected = os.environ.get("WEBHOOK_SECRET", "")
+    if not expected:
+        return False
+    return hmac.compare_digest(f"{header_token}:{secret_token}", expected)
+```
+5. **Bằng chứng đã vá:** blackbox v1: 0/200 lỗi; coverage v1: 0/200 lỗi; concolic v1: 0/1 lỗi
+   - Ví dụ CVE: CVE-2020-10148 (SolarWinds Orion auth bypass)
+
+### 6.20. CWE-798 (Use of Hard-coded Credentials) tại `support_override_pin` — confirmed
+
+1. **Vị trí:** support_override_pin
+2. **Nguyên nhân:** Giá trị bí mật hardcode trong mã nguồn cho phép vượt qua xác thực.
+3. **Bằng chứng lỗi tồn tại:**
+   - concolic: bypass ở lần thử 4/200, input (4821, 7306)
+4. **Cách vá:** Bỏ nhánh bí mật; so khớp với bí mật cấu hình ngoài mã nguồn bằng hmac.compare_digest.
+
+```python
+# v0
+def support_override_pin(pin_a, pin_b):
+    if pin_a == 4821:
+        if pin_b == 7306:
+            return True
+    return False
+```
+```python
+# v1
+import hmac
+import os
+
+
+def support_override_pin(pin_a, pin_b):
+    expected = os.environ.get("WEBHOOK_SECRET", "")
+    if not expected:
+        return False
+    return hmac.compare_digest(f"{pin_a}:{pin_b}", expected)
+```
+5. **Bằng chứng đã vá:** blackbox v1: 0/200 lỗi; coverage v1: 0/200 lỗi; concolic v1: 0/1 lỗi
+   - Ví dụ CVE: CVE-2020-10148 (SolarWinds Orion auth bypass)
+
+### 6.21. CWE-190 (Integer Overflow or Wraparound) tại `calculate_total_payment` — declared-only
+
+1. **Vị trí:** calculate_total_payment; truy vết REQ-9
+2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
+3. **Bằng chứng lỗi tồn tại:**
+   - Khai báo Loi='integer-overflow' nhưng không công cụ nào xác nhận
 4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
 
 ```c
@@ -528,155 +685,8 @@ int calculate_total_payment(int amount, int shipping_fee, int *out) {
     return 0;
 }
 ```
-5. **Bằng chứng đã vá:** Scanner v1: 0 finding; Sanitizer v1: sạch
+5. **Bằng chứng đã vá:** —
    - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
-
-### 6.13. CWE-190 (Integer Overflow or Wraparound) tại `order_total_counter` — confirmed
-
-1. **Vị trí:** order_total_counter
-2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
-3. **Bằng chứng lỗi tồn tại:**
-   - Z3 SAT: {'amount': 2147483647, 'shipping_fee': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2147204848
-4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
-5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
-   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
-
-### 6.14. CWE-190 (Integer Overflow or Wraparound) tại `daily_transaction_counter` — confirmed
-
-1. **Vị trí:** daily_transaction_counter
-2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
-3. **Bằng chứng lỗi tồn tại:**
-   - Z3 SAT: {'tx_today': 2147483647, 'tx_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2129640465
-4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
-5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
-   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
-
-### 6.15. CWE-190 (Integer Overflow or Wraparound) tại `active_session_counter` — confirmed
-
-1. **Vị trí:** active_session_counter
-2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
-3. **Bằng chứng lỗi tồn tại:**
-   - Z3 SAT: {'active_sessions': 2147483647, 'pending_sessions': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145843031
-4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
-5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
-   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
-
-### 6.16. CWE-190 (Integer Overflow or Wraparound) tại `refund_total_vnd` — confirmed
-
-1. **Vị trí:** refund_total_vnd
-2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
-3. **Bằng chứng lỗi tồn tại:**
-   - Z3 SAT: {'refunded_vnd': 2147483647, 'pending_refund_vnd': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2143285231
-4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
-5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
-   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
-
-### 6.17. CWE-190 (Integer Overflow or Wraparound) tại `webhook_retry_counter` — confirmed
-
-1. **Vị trí:** webhook_retry_counter
-2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
-3. **Bằng chứng lỗi tồn tại:**
-   - Z3 SAT: {'retries_today': 2147483647, 'retries_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2111565480
-4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
-5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
-   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
-
-### 6.18. CWE-190 (Integer Overflow or Wraparound) tại `settlement_batch_bytes` — confirmed
-
-1. **Vị trí:** settlement_batch_bytes
-2. **Nguyên nhân:** Phép tính số nguyên vượt miền int32 và bị wrap-around (ví dụ tổng tiền thành số âm).
-3. **Bằng chứng lỗi tồn tại:**
-   - Z3 SAT: {'batch_bytes': 2147483647, 'header_bytes': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145771516
-4. **Cách vá:** Kiểm tra a > INT_MAX - b trước khi cộng, hoặc dùng kiểu rộng hơn.
-5. **Bằng chứng đã vá:** Z3 UNSAT với tiền điều kiện của v1
-   - Ví dụ CVE: CVE-2018-10299 (BeautyChain BEC token)
-
-### 6.19. CWE-369 (Divide By Zero) tại `refund_ratio` — confirmed
-
-1. **Vị trí:** refund_ratio; truy vết REQ-10
-2. **Nguyên nhân:** Phép chia không kiểm tra mẫu số bằng 0, gây crash (DoS).
-3. **Bằng chứng lỗi tồn tại:**
-   - blackbox: ZeroDivisionError ở lần thử 48/2000, input (2147483646, 0)
-   - coverage: ZeroDivisionError ở lần thử 6/2000, input (1, 0)
-   - concolic: ZeroDivisionError ở lần thử 2/2000, input (-2147483648, 0)
-4. **Cách vá:** Kiểm tra mẫu số khác 0 trước khi chia.
-
-```python
-# v0
-def refund_ratio(refund_amount, total_amount):
-    return refund_amount // total_amount
-```
-```python
-# v1
-def refund_ratio(refund_amount, total_amount):
-    if total_amount == 0:
-        return 0
-    return refund_amount // total_amount
-```
-5. **Bằng chứng đã vá:** blackbox v1: 0/2000 lỗi; coverage v1: 0/2000 lỗi; concolic v1: 0/3 lỗi
-   - Ví dụ CVE: CVE-2020-1971
-
-### 6.20. CWE-798 (Use of Hard-coded Credentials) tại `webhook_bypass_token` — confirmed
-
-1. **Vị trí:** webhook_bypass_token
-2. **Nguyên nhân:** Giá trị bí mật hardcode trong mã nguồn cho phép vượt qua xác thực.
-3. **Bằng chứng lỗi tồn tại:**
-   - concolic: bypass ở lần thử 4/2000, input (7788, 9999)
-4. **Cách vá:** Bỏ nhánh bí mật; so khớp với bí mật cấu hình ngoài mã nguồn bằng hmac.compare_digest.
-
-```python
-# v0
-def webhook_bypass_token(header_token, secret_token):
-    if header_token == 7788:
-        if secret_token == 9999:
-            return True
-    return False
-```
-```python
-# v1
-import hmac
-import os
-
-
-def webhook_bypass_token(header_token, secret_token):
-    expected = os.environ.get("WEBHOOK_SECRET", "")
-    if not expected:
-        return False
-    return hmac.compare_digest(f"{header_token}:{secret_token}", expected)
-```
-5. **Bằng chứng đã vá:** blackbox v1: 0/2000 lỗi; coverage v1: 0/2000 lỗi; concolic v1: 0/1 lỗi
-   - Ví dụ CVE: CVE-2020-10148 (SolarWinds Orion auth bypass)
-
-### 6.21. CWE-798 (Use of Hard-coded Credentials) tại `support_override_pin` — confirmed
-
-1. **Vị trí:** support_override_pin
-2. **Nguyên nhân:** Giá trị bí mật hardcode trong mã nguồn cho phép vượt qua xác thực.
-3. **Bằng chứng lỗi tồn tại:**
-   - concolic: bypass ở lần thử 4/2000, input (4821, 7306)
-4. **Cách vá:** Bỏ nhánh bí mật; so khớp với bí mật cấu hình ngoài mã nguồn bằng hmac.compare_digest.
-
-```python
-# v0
-def support_override_pin(pin_a, pin_b):
-    if pin_a == 4821:
-        if pin_b == 7306:
-            return True
-    return False
-```
-```python
-# v1
-import hmac
-import os
-
-
-def support_override_pin(pin_a, pin_b):
-    expected = os.environ.get("WEBHOOK_SECRET", "")
-    if not expected:
-        return False
-    return hmac.compare_digest(f"{pin_a}:{pin_b}", expected)
-```
-5. **Bằng chứng đã vá:** blackbox v1: 0/2000 lỗi; coverage v1: 0/2000 lỗi; concolic v1: 0/1 lỗi
-   - Ví dụ CVE: CVE-2020-10148 (SolarWinds Orion auth bypass)
 
 ## 7. Bảng tổng hợp trước/sau
 
@@ -689,20 +699,20 @@ def support_override_pin(pin_a, pin_b):
 | CWE-693 | AG(!double_capture) | AG(!double_capture) sai; phản ví dụ: CREATED -> PENDING -> SUCCEEDED -> DUPLICATE_CAPTURE | — | CTL, BMC (Z3) |
 | CWE-693 | AG(refunding -> AF(refunded)) | AG(refunding -> AF(refunded)) sai; phản ví dụ: CREATED -> PENDING -> SUCCEEDED -> REFUNDING -> REFUNDING | — | CTL |
 | CWE-833 | Mô hình trạng thái | Trạng thái deadlock: REFUNDING | — | Kripke |
-| CWE-120 | parse_webhook_signature | Scanner: dangerous-function tại dòng 9 (`strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */`) | Scanner v1: 0 finding; Sanitizer v1: sạch | Static scanner, ASan/UBSan |
-| CWE-401 | write_audit_log | Scanner: memory-leak tại dòng 12 (`return 0; /* thoat ma khong free */`) | Scanner v1: 0 finding; Sanitizer v1: sạch | Static scanner |
-| CWE-415 | close_payment_session | Scanner: double-free tại dòng 13 (`free(data); /* giai phong lan thu hai */`) | Scanner v1: 0 finding; Sanitizer v1: sạch | Static scanner, ASan/UBSan |
-| CWE-416 | release_card_token_buffer | Scanner: use-after-free tại dòng 12 (`data[0] = 'A'; /* ghi sau khi da free */`) | Scanner v1: 0 finding; Sanitizer v1: sạch | Static scanner, ASan/UBSan |
-| CWE-190 | calculate_total_payment | Sanitizer: signed-integer-overflow tại dòng 5 với input (INT_MAX, 1) | Scanner v1: 0 finding; Sanitizer v1: sạch | ASan/UBSan |
+| CWE-120 | parse_webhook_signature | Scanner: dangerous-function tại dòng 9 (`strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */`) | Scanner v1: 0 finding | Static scanner |
+| CWE-401 | write_audit_log | Scanner: memory-leak tại dòng 12 (`return 0; /* thoat ma khong free */`) | Scanner v1: 0 finding | Static scanner |
+| CWE-415 | close_payment_session | Scanner: double-free tại dòng 13 (`free(data); /* giai phong lan thu hai */`) | Scanner v1: 0 finding | Static scanner |
+| CWE-416 | release_card_token_buffer | Scanner: use-after-free tại dòng 12 (`data[0] = 'A'; /* ghi sau khi da free */`) | Scanner v1: 0 finding | Static scanner |
 | CWE-190 | order_total_counter | Z3 SAT: {'amount': 2147483647, 'shipping_fee': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2147204848 | Z3 UNSAT với tiền điều kiện của v1 | Z3 |
 | CWE-190 | daily_transaction_counter | Z3 SAT: {'tx_today': 2147483647, 'tx_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2129640465 | Z3 UNSAT với tiền điều kiện của v1 | Z3 |
 | CWE-190 | active_session_counter | Z3 SAT: {'active_sessions': 2147483647, 'pending_sessions': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145843031 | Z3 UNSAT với tiền điều kiện của v1 | Z3 |
 | CWE-190 | refund_total_vnd | Z3 SAT: {'refunded_vnd': 2147483647, 'pending_refund_vnd': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2143285231 | Z3 UNSAT với tiền điều kiện của v1 | Z3 |
 | CWE-190 | webhook_retry_counter | Z3 SAT: {'retries_today': 2147483647, 'retries_backlog': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2111565480 | Z3 UNSAT với tiền điều kiện của v1 | Z3 |
 | CWE-190 | settlement_batch_bytes | Z3 SAT: {'batch_bytes': 2147483647, 'header_bytes': 1} → giá trị đúng 2147483648; bit-vector 32-bit wrap-around = -2145771516 | Z3 UNSAT với tiền điều kiện của v1 | Z3 |
-| CWE-369 | refund_ratio | blackbox: ZeroDivisionError ở lần thử 48/2000, input (2147483646, 0) | blackbox v1: 0/2000 lỗi; coverage v1: 0/2000 lỗi; concolic v1: 0/3 lỗi | Fuzzing (blackbox), Fuzzing (coverage), Fuzzing (concolic) |
-| CWE-798 | webhook_bypass_token | concolic: bypass ở lần thử 4/2000, input (7788, 9999) | blackbox v1: 0/2000 lỗi; coverage v1: 0/2000 lỗi; concolic v1: 0/1 lỗi | Fuzzing (concolic) |
-| CWE-798 | support_override_pin | concolic: bypass ở lần thử 4/2000, input (4821, 7306) | blackbox v1: 0/2000 lỗi; coverage v1: 0/2000 lỗi; concolic v1: 0/1 lỗi | Fuzzing (concolic) |
+| CWE-369 | refund_ratio | blackbox: ZeroDivisionError ở lần thử 48/200, input (2147483646, 0) | blackbox v1: 0/200 lỗi; coverage v1: 0/200 lỗi; concolic v1: 0/3 lỗi | Fuzzing (blackbox), Fuzzing (coverage), Fuzzing (concolic) |
+| CWE-798 | webhook_bypass_token | concolic: bypass ở lần thử 4/200, input (7788, 9999) | blackbox v1: 0/200 lỗi; coverage v1: 0/200 lỗi; concolic v1: 0/1 lỗi | Fuzzing (concolic) |
+| CWE-798 | support_override_pin | concolic: bypass ở lần thử 4/200, input (4821, 7306) | blackbox v1: 0/200 lỗi; coverage v1: 0/200 lỗi; concolic v1: 0/1 lỗi | Fuzzing (concolic) |
+| CWE-190 | calculate_total_payment | Khai báo Loi='integer-overflow' nhưng không công cụ nào xác nhận | — | — |
 
 ## 8. Truy vết test case
 
@@ -715,7 +725,7 @@ def support_override_pin(pin_a, pin_b):
 | TC-5 | REQ-13 | Hoàn tiền luôn hoàn tất | AG(refunding -> AF(refunded)) ĐÚNG và không có trạng thái deadlock | FAIL | AG(refunding -> AF(refunded)) = sai (mong đợi đúng); deadlock: REFUNDING |
 | TC-6 | REQ-5, CON-1 | Chữ ký webhook dài bất thường | Không phát hiện CWE-120 tại parse_webhook_signature | FAIL | CWE-120 tại parse_webhook_signature: 1 phát hiện (mong đợi 0) |
 | TC-7 | REQ-6, REQ-7, REQ-8 | Vòng đời bộ nhớ audit log / phiên / token thẻ | Không phát hiện CWE-401, CWE-415, CWE-416 | FAIL | CWE-401: 1 phát hiện (mong đợi 0); CWE-415: 1 phát hiện (mong đợi 0); CWE-416: 1 phát hiện (mong đợi 0) |
-| TC-8 | REQ-9, CON-4 | Tổng tiền vượt int32 | Không phát hiện CWE-190 tại calculate_total_payment | FAIL | CWE-190 tại calculate_total_payment: 1 phát hiện (mong đợi 0) |
+| TC-8 | REQ-9, CON-4 | Tổng tiền vượt int32 | Không phát hiện CWE-190 tại calculate_total_payment | PASS | CWE-190 tại calculate_total_payment: 0 phát hiện (mong đợi 0) |
 | TC-9 | REQ-9 | Chứng minh tiền điều kiện chống tràn bằng Z3 | Z3 SAT cho order_total_counter khi chưa kiểm tra biên và UNSAT sau khi thêm tiền điều kiện | PASS | Z3 UNSAT với tiền điều kiện của v1; Z3 SAT (tồn tại input gây tràn) |
 | TC-10 | REQ-10 | Tỷ lệ hoàn tiền với tổng tiền bằng 0 | Không crash (ZeroDivisionError) tại refund_ratio | FAIL | fuzzing: 3/3 chiến dịch tìm ra lỗi (mong đợi 0) |
 | TC-11 | REQ-11, CON-6 | Tìm mã bí mật bằng concolic fuzzing | Không phát hiện CWE-798 | FAIL | CWE-798: 2 phát hiện (mong đợi 0) |

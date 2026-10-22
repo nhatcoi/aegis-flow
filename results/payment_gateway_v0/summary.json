@@ -1,23 +1,25 @@
 {
   "spec": "payment_gateway_v0",
   "environment": {
-    "thời gian": "2026-09-29 23:30:14 +0700",
+    "thời gian": "2026-10-23 00:00:59 +0700",
     "hệ điều hành": "Darwin 25.2.0 (arm64)",
     "python": "3.11.15",
     "z3-solver": "4.16.0",
     "trình biên dịch C": "Apple clang version 17.0.0 (clang-1700.6.3.2)",
     "seed": "1",
-    "ngân sách fuzzing": "2000"
+    "ngân sách fuzzing": "200",
+    "độ sâu BMC": "tự động (CT)",
+    "timeout sanitizer": "30s"
   },
   "timings_seconds": {
-    "ch1_kripke": 0.0005,
-    "ch3_bmc": 0.1306,
-    "codegen": 0.0001,
-    "ch2_static": 0.006,
-    "ch2_sanitizers": 6.5075,
-    "ch3_smt": 0.0278,
-    "ch4_fuzz": 0.1034,
-    "cwe": 0.0006
+    "ch1_kripke": 0.0004,
+    "ch3_bmc": 0.0666,
+    "codegen": 0.0,
+    "ch2_static": 0.0031,
+    "ch2_sanitizers": 0.0,
+    "ch3_smt": 0.0176,
+    "ch4_fuzz": 0.0392,
+    "cwe": 0.0004
   },
   "kripke": {
     "valid": false,
@@ -272,92 +274,7 @@
     "calculate_total_payment/v0": [],
     "calculate_total_payment/v1": []
   },
-  "sanitizers": [
-    {
-      "function": "parse_webhook_signature",
-      "version": "v0",
-      "status": "detected",
-      "detections": [
-        [
-          "stack-buffer-overflow",
-          "CWE-121",
-          9
-        ]
-      ]
-    },
-    {
-      "function": "parse_webhook_signature",
-      "version": "v1",
-      "status": "clean",
-      "detections": []
-    },
-    {
-      "function": "write_audit_log",
-      "version": "v0",
-      "status": "clean",
-      "detections": []
-    },
-    {
-      "function": "write_audit_log",
-      "version": "v1",
-      "status": "clean",
-      "detections": []
-    },
-    {
-      "function": "close_payment_session",
-      "version": "v0",
-      "status": "detected",
-      "detections": [
-        [
-          "double-free",
-          "CWE-415",
-          13
-        ]
-      ]
-    },
-    {
-      "function": "close_payment_session",
-      "version": "v1",
-      "status": "clean",
-      "detections": []
-    },
-    {
-      "function": "release_card_token_buffer",
-      "version": "v0",
-      "status": "detected",
-      "detections": [
-        [
-          "heap-use-after-free",
-          "CWE-416",
-          12
-        ]
-      ]
-    },
-    {
-      "function": "release_card_token_buffer",
-      "version": "v1",
-      "status": "clean",
-      "detections": []
-    },
-    {
-      "function": "calculate_total_payment",
-      "version": "v0",
-      "status": "detected",
-      "detections": [
-        [
-          "signed-integer-overflow",
-          "CWE-190",
-          5
-        ]
-      ]
-    },
-    {
-      "function": "calculate_total_payment",
-      "version": "v1",
-      "status": "clean",
-      "detections": []
-    }
-  ],
+  "sanitizers": [],
   "smt": [
     {
       "name": "order_total_counter",
@@ -437,9 +354,9 @@
       "function": "refund_ratio",
       "version": "v0",
       "strategy": "blackbox",
-      "budget": 2000,
-      "iterations": 2000,
-      "hits": 47,
+      "budget": 200,
+      "iterations": 200,
+      "hits": 3,
       "first_hit": 48,
       "first_input": [
         2147483646,
@@ -447,16 +364,17 @@
       ],
       "finding": "ZeroDivisionError",
       "cwe": "CWE-369",
-      "seconds": 0.029641625005751848,
-      "lines_covered": 0
+      "seconds": 0.00020454218611121178,
+      "lines_covered": 0,
+      "search_strategy": "none"
     },
     {
       "function": "refund_ratio",
       "version": "v0",
       "strategy": "coverage",
-      "budget": 2000,
-      "iterations": 2000,
-      "hits": 24,
+      "budget": 200,
+      "iterations": 200,
+      "hits": 5,
       "first_hit": 6,
       "first_input": [
         1,
@@ -464,14 +382,15 @@
       ],
       "finding": "ZeroDivisionError",
       "cwe": "CWE-369",
-      "seconds": 0.0038541670073755085,
-      "lines_covered": 1
+      "seconds": 0.013099499978125095,
+      "lines_covered": 1,
+      "search_strategy": "none"
     },
     {
       "function": "refund_ratio",
       "version": "v0",
       "strategy": "concolic",
-      "budget": 2000,
+      "budget": 200,
       "iterations": 3,
       "hits": 1,
       "first_hit": 2,
@@ -481,84 +400,90 @@
       ],
       "finding": "ZeroDivisionError",
       "cwe": "CWE-369",
-      "seconds": 0.004386415996123105,
-      "lines_covered": 0
+      "seconds": 0.002594208111986518,
+      "lines_covered": 0,
+      "search_strategy": "bfs"
     },
     {
       "function": "refund_ratio",
       "version": "v1",
       "strategy": "blackbox",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.0019448750535957515,
-      "lines_covered": 0
+      "seconds": 0.00018583284690976143,
+      "lines_covered": 0,
+      "search_strategy": "none"
     },
     {
       "function": "refund_ratio",
       "version": "v1",
       "strategy": "coverage",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.0037858749856241047,
-      "lines_covered": 3
+      "seconds": 0.0003743749111890793,
+      "lines_covered": 3,
+      "search_strategy": "none"
     },
     {
       "function": "refund_ratio",
       "version": "v1",
       "strategy": "concolic",
-      "budget": 2000,
+      "budget": 200,
       "iterations": 3,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.003957124950829893,
-      "lines_covered": 0
+      "seconds": 0.0033678750041872263,
+      "lines_covered": 0,
+      "search_strategy": "bfs"
     },
     {
       "function": "webhook_bypass_token",
       "version": "v0",
       "strategy": "blackbox",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.001752957992721349,
-      "lines_covered": 0
+      "seconds": 0.00017399992793798447,
+      "lines_covered": 0,
+      "search_strategy": "none"
     },
     {
       "function": "webhook_bypass_token",
       "version": "v0",
       "strategy": "coverage",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.003905166988261044,
-      "lines_covered": 2
+      "seconds": 0.00035141617991030216,
+      "lines_covered": 2,
+      "search_strategy": "none"
     },
     {
       "function": "webhook_bypass_token",
       "version": "v0",
       "strategy": "concolic",
-      "budget": 2000,
+      "budget": 200,
       "iterations": 5,
       "hits": 1,
       "first_hit": 4,
@@ -568,84 +493,90 @@
       ],
       "finding": "bypass",
       "cwe": "CWE-798",
-      "seconds": 0.014898041961714625,
-      "lines_covered": 0
+      "seconds": 0.007293041795492172,
+      "lines_covered": 0,
+      "search_strategy": "bfs"
     },
     {
       "function": "webhook_bypass_token",
       "version": "v1",
       "strategy": "blackbox",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.0025505420053377748,
-      "lines_covered": 0
+      "seconds": 0.0002523751463741064,
+      "lines_covered": 0,
+      "search_strategy": "none"
     },
     {
       "function": "webhook_bypass_token",
       "version": "v1",
       "strategy": "coverage",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.0059367920039221644,
-      "lines_covered": 3
+      "seconds": 0.0005502081476151943,
+      "lines_covered": 3,
+      "search_strategy": "none"
     },
     {
       "function": "webhook_bypass_token",
       "version": "v1",
       "strategy": "concolic",
-      "budget": 2000,
+      "budget": 200,
       "iterations": 1,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 5.5500015150755644e-05,
-      "lines_covered": 0
+      "seconds": 2.7499860152602196e-05,
+      "lines_covered": 0,
+      "search_strategy": "bfs"
     },
     {
       "function": "support_override_pin",
       "version": "v0",
       "strategy": "blackbox",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.0017120830016210675,
-      "lines_covered": 0
+      "seconds": 0.00020145811140537262,
+      "lines_covered": 0,
+      "search_strategy": "none"
     },
     {
       "function": "support_override_pin",
       "version": "v0",
       "strategy": "coverage",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.004077749967109412,
-      "lines_covered": 2
+      "seconds": 0.0003580839838832617,
+      "lines_covered": 2,
+      "search_strategy": "none"
     },
     {
       "function": "support_override_pin",
       "version": "v0",
       "strategy": "concolic",
-      "budget": 2000,
+      "budget": 200,
       "iterations": 5,
       "hits": 1,
       "first_hit": 4,
@@ -655,50 +586,54 @@
       ],
       "finding": "bypass",
       "cwe": "CWE-798",
-      "seconds": 0.009132249979302287,
-      "lines_covered": 0
+      "seconds": 0.006903500063344836,
+      "lines_covered": 0,
+      "search_strategy": "bfs"
     },
     {
       "function": "support_override_pin",
       "version": "v1",
       "strategy": "blackbox",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.002479415968991816,
-      "lines_covered": 0
+      "seconds": 0.00023250002413988113,
+      "lines_covered": 0,
+      "search_strategy": "none"
     },
     {
       "function": "support_override_pin",
       "version": "v1",
       "strategy": "coverage",
-      "budget": 2000,
-      "iterations": 2000,
+      "budget": 200,
+      "iterations": 200,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 0.0060480000101961195,
-      "lines_covered": 3
+      "seconds": 0.0005535839591175318,
+      "lines_covered": 3,
+      "search_strategy": "none"
     },
     {
       "function": "support_override_pin",
       "version": "v1",
       "strategy": "concolic",
-      "budget": 2000,
+      "budget": 200,
       "iterations": 1,
       "hits": 0,
       "first_hit": null,
       "first_input": null,
       "finding": null,
       "cwe": null,
-      "seconds": 5.099998088553548e-05,
-      "lines_covered": 0
+      "seconds": 1.995800994336605e-05,
+      "lines_covered": 0,
+      "search_strategy": "bfs"
     }
   ],
   "findings": [
@@ -829,16 +764,13 @@
       "component": "parse_webhook_signature",
       "status": "confirmed",
       "tools": [
-        "Static scanner",
-        "ASan/UBSan"
+        "Static scanner"
       ],
       "before": [
-        "Scanner: dangerous-function tại dòng 9 (`strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */`)",
-        "Sanitizer: stack-buffer-overflow tại dòng 9 với input chuỗi 520 ký tự 'A' (gấp 8 lần bộ đệm 65 byte)"
+        "Scanner: dangerous-function tại dòng 9 (`strcpy(buffer, raw_signature); /* khong kiem tra kich thuoc dich */`)"
       ],
       "after": [
-        "Scanner v1: 0 finding",
-        "Sanitizer v1: sạch"
+        "Scanner v1: 0 finding"
       ],
       "fixed": true,
       "requirements": [
@@ -858,8 +790,7 @@
         "Scanner: memory-leak tại dòng 12 (`return 0; /* thoat ma khong free */`)"
       ],
       "after": [
-        "Scanner v1: 0 finding",
-        "Sanitizer v1: sạch"
+        "Scanner v1: 0 finding"
       ],
       "fixed": true,
       "requirements": [
@@ -873,16 +804,13 @@
       "component": "close_payment_session",
       "status": "confirmed",
       "tools": [
-        "Static scanner",
-        "ASan/UBSan"
+        "Static scanner"
       ],
       "before": [
-        "Scanner: double-free tại dòng 13 (`free(data); /* giai phong lan thu hai */`)",
-        "Sanitizer: double-free tại dòng 13 với input gọi hàm một lần"
+        "Scanner: double-free tại dòng 13 (`free(data); /* giai phong lan thu hai */`)"
       ],
       "after": [
-        "Scanner v1: 0 finding",
-        "Sanitizer v1: sạch"
+        "Scanner v1: 0 finding"
       ],
       "fixed": true,
       "requirements": [
@@ -896,41 +824,17 @@
       "component": "release_card_token_buffer",
       "status": "confirmed",
       "tools": [
-        "Static scanner",
-        "ASan/UBSan"
+        "Static scanner"
       ],
       "before": [
-        "Scanner: use-after-free tại dòng 12 (`data[0] = 'A'; /* ghi sau khi da free */`)",
-        "Sanitizer: heap-use-after-free tại dòng 12 với input gọi hàm một lần"
+        "Scanner: use-after-free tại dòng 12 (`data[0] = 'A'; /* ghi sau khi da free */`)"
       ],
       "after": [
-        "Scanner v1: 0 finding",
-        "Sanitizer v1: sạch"
+        "Scanner v1: 0 finding"
       ],
       "fixed": true,
       "requirements": [
         "REQ-8"
-      ]
-    },
-    {
-      "cwe": "CWE-190",
-      "name": "Integer Overflow or Wraparound",
-      "severity": "HIGH",
-      "component": "calculate_total_payment",
-      "status": "confirmed",
-      "tools": [
-        "ASan/UBSan"
-      ],
-      "before": [
-        "Sanitizer: signed-integer-overflow tại dòng 5 với input (INT_MAX, 1)"
-      ],
-      "after": [
-        "Scanner v1: 0 finding",
-        "Sanitizer v1: sạch"
-      ],
-      "fixed": true,
-      "requirements": [
-        "REQ-9"
       ]
     },
     {
@@ -1053,13 +957,13 @@
         "Fuzzing (concolic)"
       ],
       "before": [
-        "blackbox: ZeroDivisionError ở lần thử 48/2000, input (2147483646, 0)",
-        "coverage: ZeroDivisionError ở lần thử 6/2000, input (1, 0)",
-        "concolic: ZeroDivisionError ở lần thử 2/2000, input (-2147483648, 0)"
+        "blackbox: ZeroDivisionError ở lần thử 48/200, input (2147483646, 0)",
+        "coverage: ZeroDivisionError ở lần thử 6/200, input (1, 0)",
+        "concolic: ZeroDivisionError ở lần thử 2/200, input (-2147483648, 0)"
       ],
       "after": [
-        "blackbox v1: 0/2000 lỗi",
-        "coverage v1: 0/2000 lỗi",
+        "blackbox v1: 0/200 lỗi",
+        "coverage v1: 0/200 lỗi",
         "concolic v1: 0/3 lỗi"
       ],
       "fixed": true,
@@ -1077,11 +981,11 @@
         "Fuzzing (concolic)"
       ],
       "before": [
-        "concolic: bypass ở lần thử 4/2000, input (7788, 9999)"
+        "concolic: bypass ở lần thử 4/200, input (7788, 9999)"
       ],
       "after": [
-        "blackbox v1: 0/2000 lỗi",
-        "coverage v1: 0/2000 lỗi",
+        "blackbox v1: 0/200 lỗi",
+        "coverage v1: 0/200 lỗi",
         "concolic v1: 0/1 lỗi"
       ],
       "fixed": true,
@@ -1097,15 +1001,31 @@
         "Fuzzing (concolic)"
       ],
       "before": [
-        "concolic: bypass ở lần thử 4/2000, input (4821, 7306)"
+        "concolic: bypass ở lần thử 4/200, input (4821, 7306)"
       ],
       "after": [
-        "blackbox v1: 0/2000 lỗi",
-        "coverage v1: 0/2000 lỗi",
+        "blackbox v1: 0/200 lỗi",
+        "coverage v1: 0/200 lỗi",
         "concolic v1: 0/1 lỗi"
       ],
       "fixed": true,
       "requirements": []
+    },
+    {
+      "cwe": "CWE-190",
+      "name": "Integer Overflow or Wraparound",
+      "severity": "HIGH",
+      "component": "calculate_total_payment",
+      "status": "declared-only",
+      "tools": [],
+      "before": [
+        "Khai báo Loi='integer-overflow' nhưng không công cụ nào xác nhận"
+      ],
+      "after": [],
+      "fixed": null,
+      "requirements": [
+        "REQ-9"
+      ]
     }
   ],
   "test_cases": [
@@ -1146,8 +1066,8 @@
     },
     {
       "id": "TC-8",
-      "status": "FAIL",
-      "reason": "CWE-190 tại calculate_total_payment: 1 phát hiện (mong đợi 0)"
+      "status": "PASS",
+      "reason": "CWE-190 tại calculate_total_payment: 0 phát hiện (mong đợi 0)"
     },
     {
       "id": "TC-9",

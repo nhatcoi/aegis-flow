@@ -1,19 +1,19 @@
 function,version,strategy,budget,iterations,hits,first_hit,first_input,finding,cwe,seconds,lines_covered
-refund_ratio,v0,blackbox,2000,2000,47,48,"(2147483646, 0)",ZeroDivisionError,CWE-369,0.029642,0
-refund_ratio,v0,coverage,2000,2000,24,6,"(1, 0)",ZeroDivisionError,CWE-369,0.003854,1
-refund_ratio,v0,concolic,2000,3,1,2,"(-2147483648, 0)",ZeroDivisionError,CWE-369,0.004386,0
-refund_ratio,v1,blackbox,2000,2000,0,,,,,0.001945,0
-refund_ratio,v1,coverage,2000,2000,0,,,,,0.003786,3
-refund_ratio,v1,concolic,2000,3,0,,,,,0.003957,0
-webhook_bypass_token,v0,blackbox,2000,2000,0,,,,,0.001753,0
-webhook_bypass_token,v0,coverage,2000,2000,0,,,,,0.003905,2
-webhook_bypass_token,v0,concolic,2000,5,1,4,"(7788, 9999)",bypass,CWE-798,0.014898,0
-webhook_bypass_token,v1,blackbox,2000,2000,0,,,,,0.002551,0
-webhook_bypass_token,v1,coverage,2000,2000,0,,,,,0.005937,3
-webhook_bypass_token,v1,concolic,2000,1,0,,,,,0.000056,0
-support_override_pin,v0,blackbox,2000,2000,0,,,,,0.001712,0
-support_override_pin,v0,coverage,2000,2000,0,,,,,0.004078,2
-support_override_pin,v0,concolic,2000,5,1,4,"(4821, 7306)",bypass,CWE-798,0.009132,0
-support_override_pin,v1,blackbox,2000,2000,0,,,,,0.002479,0
-support_override_pin,v1,coverage,2000,2000,0,,,,,0.006048,3
-support_override_pin,v1,concolic,2000,1,0,,,,,0.000051,0
+refund_ratio,v0,blackbox,200,200,3,48,"(2147483646, 0)",ZeroDivisionError,CWE-369,0.000205,0
+refund_ratio,v0,coverage,200,200,5,6,"(1, 0)",ZeroDivisionError,CWE-369,0.013099,1
+refund_ratio,v0,concolic,200,3,1,2,"(-2147483648, 0)",ZeroDivisionError,CWE-369,0.002594,0
+refund_ratio,v1,blackbox,200,200,0,,,,,0.000186,0
+refund_ratio,v1,coverage,200,200,0,,,,,0.000374,3
+refund_ratio,v1,concolic,200,3,0,,,,,0.003368,0
+webhook_bypass_token,v0,blackbox,200,200,0,,,,,0.000174,0
+webhook_bypass_token,v0,coverage,200,200,0,,,,,0.000351,2
+webhook_bypass_token,v0,concolic,200,5,1,4,"(7788, 9999)",bypass,CWE-798,0.007293,0
+webhook_bypass_token,v1,blackbox,200,200,0,,,,,0.000252,0
+webhook_bypass_token,v1,coverage,200,200,0,,,,,0.000550,3
+webhook_bypass_token,v1,concolic,200,1,0,,,,,0.000027,0
+support_override_pin,v0,blackbox,200,200,0,,,,,0.000201,0
+support_override_pin,v0,coverage,200,200,0,,,,,0.000358,2
+support_override_pin,v0,concolic,200,5,1,4,"(4821, 7306)",bypass,CWE-798,0.006904,0
+support_override_pin,v1,blackbox,200,200,0,,,,,0.000233,0
+support_override_pin,v1,coverage,200,200,0,,,,,0.000554,3
+support_override_pin,v1,concolic,200,1,0,,,,,0.000020,0

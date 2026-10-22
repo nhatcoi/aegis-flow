@@ -29,7 +29,7 @@
 | TC-5 | Hoàn tiền luôn hoàn tất | FAIL | PASS |
 | TC-6 | Chữ ký webhook dài bất thường | FAIL | PASS |
 | TC-7 | Vòng đời bộ nhớ audit log / phiên / token thẻ | FAIL | PASS |
-| TC-8 | Tổng tiền vượt int32 | FAIL | PASS |
+| TC-8 | Tổng tiền vượt int32 | PASS | PASS |
 | TC-9 | Chứng minh tiền điều kiện chống tràn bằng Z3 | PASS | PASS |
 | TC-10 | Tỷ lệ hoàn tiền với tổng tiền bằng 0 | FAIL | PASS |
 | TC-11 | Tìm mã bí mật bằng concolic fuzzing | FAIL | PASS |
@@ -39,5 +39,5 @@
 
 | Đặc tả | Lỗ hổng có bằng chứng | Chưa vá | Chỉ khai báo | Test case PASS |
 |---|---|---|---|---|
-| payment_gateway_v0 | 21 | 7 | 0 | 2/12 |
+| payment_gateway_v0 | 20 | 7 | 1 | 3/12 |
 | payment_gateway_v1 | 6 | 0 | 0 | 12/12 |

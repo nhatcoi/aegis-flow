@@ -6,7 +6,7 @@ TC-4,"REQ-12,NFR-4",Cổng gửi lại webhook thu tiền,AG(!double_capture) Đ
 TC-5,REQ-13,Hoàn tiền luôn hoàn tất,AG(refunding -> AF(refunded)) ĐÚNG và không có trạng thái deadlock,FAIL,AG(refunding -> AF(refunded)) = sai (mong đợi đúng); deadlock: REFUNDING
 TC-6,"REQ-5,CON-1",Chữ ký webhook dài bất thường,Không phát hiện CWE-120 tại parse_webhook_signature,FAIL,CWE-120 tại parse_webhook_signature: 1 phát hiện (mong đợi 0)
 TC-7,"REQ-6,REQ-7,REQ-8",Vòng đời bộ nhớ audit log / phiên / token thẻ,"Không phát hiện CWE-401, CWE-415, CWE-416",FAIL,CWE-401: 1 phát hiện (mong đợi 0); CWE-415: 1 phát hiện (mong đợi 0); CWE-416: 1 phát hiện (mong đợi 0)
-TC-8,"REQ-9,CON-4",Tổng tiền vượt int32,Không phát hiện CWE-190 tại calculate_total_payment,FAIL,CWE-190 tại calculate_total_payment: 1 phát hiện (mong đợi 0)
+TC-8,"REQ-9,CON-4",Tổng tiền vượt int32,Không phát hiện CWE-190 tại calculate_total_payment,PASS,CWE-190 tại calculate_total_payment: 0 phát hiện (mong đợi 0)
 TC-9,REQ-9,Chứng minh tiền điều kiện chống tràn bằng Z3,Z3 SAT cho order_total_counter khi chưa kiểm tra biên và UNSAT sau khi thêm tiền điều kiện,PASS,Z3 UNSAT với tiền điều kiện của v1; Z3 SAT (tồn tại input gây tràn)
 TC-10,REQ-10,Tỷ lệ hoàn tiền với tổng tiền bằng 0,Không crash (ZeroDivisionError) tại refund_ratio,FAIL,fuzzing: 3/3 chiến dịch tìm ra lỗi (mong đợi 0)
 TC-11,"REQ-11,CON-6",Tìm mã bí mật bằng concolic fuzzing,Không phát hiện CWE-798,FAIL,CWE-798: 2 phát hiện (mong đợi 0)

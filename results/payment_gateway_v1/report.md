@@ -6,13 +6,15 @@ Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời tha
 
 | Mục | Giá trị |
 |---|---|
-| thời gian | 2026-09-29 23:30:21 +0700 |
+| thời gian | 2026-10-23 00:00:59 +0700 |
 | hệ điều hành | Darwin 25.2.0 (arm64) |
 | python | 3.11.15 |
 | z3-solver | 4.16.0 |
 | trình biên dịch C | Apple clang version 17.0.0 (clang-1700.6.3.2) |
 | seed | 1 |
-| ngân sách fuzzing | 2000 |
+| ngân sách fuzzing | 200 |
+| độ sâu BMC | tự động (CT) |
+| timeout sanitizer | 30s |
 
 ## 1. Đặc tả
 
@@ -94,15 +96,6 @@ Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời tha
 | release_card_token_buffer | v1 | 0 finding |
 | calculate_total_payment | v0 | 0 finding |
 | calculate_total_payment | v1 | 0 finding |
-
-**AddressSanitizer / UBSan:**
-
-| Hàm | Bản | Input | Kết quả | Phát hiện |
-|---|---|---|---|---|
-| calculate_total_payment | v0 | (INT_MAX, 1) | clean | — |
-| calculate_total_payment | v1 | (INT_MAX, 1) | clean | — |
-
-> LeakSanitizer không hỗ trợ trên macOS: CWE-401 chỉ có bằng chứng tĩnh.
 
 ## 4. Chương 3 — AST và SMT
 
@@ -207,26 +200,40 @@ Cổng thanh toán cho đơn hàng thương mại điện tử: vòng đời tha
 
 ## 5. Chương 4 — Fuzzing
 
-| Hàm | Bản | Chiến lược | Lần thử | Số lỗi | Lần đầu tìm thấy | Input | Loại | Thời gian |
-|---|---|---|---|---|---|---|---|---|
-| refund_ratio | v0 | blackbox | 2000 | 0 | — | — | — | 2.9 ms |
-| refund_ratio | v0 | coverage | 2000 | 0 | — | — | — | 4.3 ms |
-| refund_ratio | v0 | concolic | 3 | 0 | — | — | — | 3.9 ms |
-| refund_ratio | v1 | blackbox | 2000 | 0 | — | — | — | 2.0 ms |
-| refund_ratio | v1 | coverage | 2000 | 0 | — | — | — | 4.0 ms |
-| refund_ratio | v1 | concolic | 3 | 0 | — | — | — | 3.9 ms |
-| webhook_bypass_token | v0 | blackbox | 2000 | 0 | — | — | — | 2.5 ms |
-| webhook_bypass_token | v0 | coverage | 2000 | 0 | — | — | — | 5.8 ms |
-| webhook_bypass_token | v0 | concolic | 1 | 0 | — | — | — | 0.0 ms |
-| webhook_bypass_token | v1 | blackbox | 2000 | 0 | — | — | — | 2.5 ms |
-| webhook_bypass_token | v1 | coverage | 2000 | 0 | — | — | — | 5.7 ms |
-| webhook_bypass_token | v1 | concolic | 1 | 0 | — | — | — | 0.0 ms |
-| support_override_pin | v0 | blackbox | 2000 | 0 | — | — | — | 2.5 ms |
-| support_override_pin | v0 | coverage | 2000 | 0 | — | — | — | 5.8 ms |
-| support_override_pin | v0 | concolic | 1 | 0 | — | — | — | 0.0 ms |
-| support_override_pin | v1 | blackbox | 2000 | 0 | — | — | — | 2.5 ms |
-| support_override_pin | v1 | coverage | 2000 | 0 | — | — | — | 5.8 ms |
-| support_override_pin | v1 | concolic | 1 | 0 | — | — | — | 0.0 ms |
+### Fuzzing hàm (Data Input Fuzzing: Blackbox, Coverage-guided, Whitebox Concolic)
+
+| Hàm | Bản | Chiến lược | Tìm kiếm | Lần thử | Số lỗi | Lần đầu tìm thấy | Input | Loại | Thời gian |
+|---|---|---|---|---|---|---|---|---|---|
+| refund_ratio | v0 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| refund_ratio | v0 | coverage | — | 200 | 0 | — | — | — | 0.4 ms |
+| refund_ratio | v0 | concolic | BFS | 3 | 0 | — | — | — | 3.3 ms |
+| refund_ratio | v1 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| refund_ratio | v1 | coverage | — | 200 | 0 | — | — | — | 0.4 ms |
+| refund_ratio | v1 | concolic | BFS | 3 | 0 | — | — | — | 3.2 ms |
+| webhook_bypass_token | v0 | blackbox | — | 200 | 0 | — | — | — | 0.3 ms |
+| webhook_bypass_token | v0 | coverage | — | 200 | 0 | — | — | — | 0.6 ms |
+| webhook_bypass_token | v0 | concolic | BFS | 1 | 0 | — | — | — | 0.0 ms |
+| webhook_bypass_token | v1 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| webhook_bypass_token | v1 | coverage | — | 200 | 0 | — | — | — | 0.6 ms |
+| webhook_bypass_token | v1 | concolic | BFS | 1 | 0 | — | — | — | 0.0 ms |
+| support_override_pin | v0 | blackbox | — | 200 | 0 | — | — | — | 0.2 ms |
+| support_override_pin | v0 | coverage | — | 200 | 0 | — | — | — | 0.8 ms |
+| support_override_pin | v0 | concolic | BFS | 1 | 0 | — | — | — | 0.0 ms |
+| support_override_pin | v1 | blackbox | — | 200 | 0 | — | — | — | 0.3 ms |
+| support_override_pin | v1 | coverage | — | 200 | 0 | — | — | — | 0.5 ms |
+| support_override_pin | v1 | concolic | BFS | 1 | 0 | — | — | — | 0.0 ms |
+
+
+### Fuzzing phát sinh chuỗi trạng thái (State Sequence Fuzzing)
+
+Khám phá không gian trạng thái theo cả 3 chiến lược: **BFS** (chiều rộng), **DFS** (chiều sâu) và **Coverage-guided** (đột biến chuỗi trạng thái từ seed data).
+
+| Chiến lược | Độ sâu k | Đường đi thử | Độ phủ State | Độ phủ Chuyển tiếp | Số crash / lỗi | Thời gian |
+|---|---|---|---|---|---|---|
+| BFS | 8 | 68 | 100.0% | 100.0% | 0 | 0.1 ms |
+| DFS | 8 | 68 | 100.0% | 100.0% | 0 | 0.0 ms |
+| COVERAGE | 8 | 200 | 91.7% | 77.8% | 0 | 0.3 ms |
+
 
 ## 6. Phân tích từng lỗ hổng
 

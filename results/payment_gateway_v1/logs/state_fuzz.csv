@@ -1,0 +1,4 @@
+strategy,max_depth,paths_explored,state_coverage,transition_coverage,crashes,seconds
+bfs,8,68,1.0000,1.0000,0,0.000060
+dfs,8,68,1.0000,1.0000,0,0.000050
+coverage,8,200,0.9167,0.7778,0,0.000314

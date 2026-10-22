@@ -123,11 +123,27 @@ def generate_markdown_report(rep: PipelineReport) -> str:
     # --- Chương 4 -------------------------------------------------------------------
     L += ["## 5. Chương 4 — Fuzzing", ""]
     if rep.fuzz:
-        L += _table(["Hàm", "Bản", "Chiến lược", "Lần thử", "Số lỗi", "Lần đầu tìm thấy", "Input", "Loại", "Thời gian"],
-                    [[r.function, r.version, r.strategy, r.iterations, r.hits, r.first_hit or "—",
-                      r.first_input or "—", r.finding or "—", f"{r.seconds * 1000:.1f} ms"] for r in rep.fuzz])
+        L += ["### Fuzzing hàm (Data Input Fuzzing: Blackbox, Coverage-guided, Whitebox Concolic)", ""]
+        L += _table(["Hàm", "Bản", "Chiến lược", "Tìm kiếm", "Lần thử", "Số lỗi", "Lần đầu tìm thấy", "Input", "Loại", "Thời gian"],
+                    [[r.function, r.version, r.strategy, r.search_strategy.upper() if r.search_strategy != "none" else "—",
+                      r.iterations, r.hits, r.first_hit or "—", r.first_input or "—", r.finding or "—",
+                      f"{r.seconds * 1000:.1f} ms"] for r in rep.fuzz])
     else:
         L += ["*Không có hàm Python để fuzz.*", ""]
+
+    if getattr(rep, "state_fuzz", None):
+        L += ["", "### Fuzzing phát sinh chuỗi trạng thái (State Sequence Fuzzing)", ""]
+        L += ["Khám phá không gian trạng thái theo cả 3 chiến lược: **BFS** (chiều rộng), **DFS** (chiều sâu) và **Coverage-guided** (đột biến chuỗi trạng thái từ seed data).", ""]
+        L += _table(["Chiến lược", "Độ sâu k", "Đường đi thử", "Độ phủ State", "Độ phủ Chuyển tiếp", "Số crash / lỗi", "Thời gian"],
+                    [[r.strategy.upper(), r.max_depth, r.paths_explored, f"{r.state_coverage * 100:.1f}%",
+                      f"{r.transition_coverage * 100:.1f}%", len(r.crashes), f"{r.seconds * 1000:.1f} ms"]
+                     for r in rep.state_fuzz])
+        crashes = [c for r in rep.state_fuzz for c in r.crashes]
+        if crashes:
+            L += ["", "**Chuỗi trạng thái dẫn tới Crash / Deadlock / Vi phạm phát hiện bởi State Fuzzer:**", ""]
+            for c in crashes:
+                L += [f"- **[{c.kind.upper()} · {c.cwe}]** tại `{c.state}`: {' -> '.join(c.path)} ({c.message})"]
+        L += [""]
 
     # --- CWE ------------------------------------------------------------------------
     L += ["## 6. Phân tích từng lỗ hổng", ""]
@@ -308,6 +324,15 @@ def write_results(rep: PipelineReport, out: Path) -> Path:
         events.append(f"== {r.function} {r.version} {r.strategy}")
         events += [f"  {e}" for e in r.events[:50]]
     (logs / "fuzz_events.txt").write_text("\n".join(events) + "\n", encoding="utf-8")
+
+    if getattr(rep, "state_fuzz", None):
+        with open(logs / "state_fuzz.csv", "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["strategy", "max_depth", "paths_explored", "state_coverage",
+                        "transition_coverage", "crashes", "seconds"])
+            for r in rep.state_fuzz:
+                w.writerow([r.strategy, r.max_depth, r.paths_explored, f"{r.state_coverage:.4f}",
+                            f"{r.transition_coverage:.4f}", len(r.crashes), f"{r.seconds:.6f}"])
 
     with open(logs / "tests.csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)

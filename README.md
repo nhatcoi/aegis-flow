@@ -7,7 +7,7 @@
 ![Python](https://img.shields.io/badge/python-3.11–3.13-3776AB?logo=python&logoColor=white)
 ![Z3](https://img.shields.io/badge/solver-Z3%204.16-8A2BE2)
 ![Qt](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-107%20passed-success)
+![Tests](https://img.shields.io/badge/tests-113%20passed-success)
 ![Course](https://img.shields.io/badge/CSE703093-An%20toàn%20phần%20mềm-orange)
 
 </div>
@@ -67,7 +67,8 @@ những gì công cụ thực sự tái hiện được.
 | **2** | ASan / UBSan | Sinh harness, biên dịch `-fsanitize=address,undefined`, chạy với input độc hại, đọc log thành finding (kèm dòng lỗi); dùng cppcheck nếu máy có | `core/toolchain.py` |
 | **3** | AST, McCabe | Biến, điều kiện, vòng lặp, V(G), độ sâu lồng nhau cho C và Python | `core/static_ast.py` |
 | **3** | SMT (Z3) | Mọi biến ràng buộc trong miền int32; lý thuyết **bit-vector** để thấy wrap-around thật; **chứng minh bản vá** bằng UNSAT | `core/arithmetic_z3.py` |
-| **4** | Fuzzing | Black-box, coverage-guided (hill climbing theo line coverage), **concolic** (path condition từ AST + Z3). Cùng ngân sách, seed cố định. Mã sinh ra chạy trong sandbox kiểm tra AST | `core/fuzzing.py` |
+| **4** | Fuzzing dữ liệu (Hàm) | Black-box, coverage-guided (hill climbing theo line coverage), **concolic** (path condition từ AST + Z3, hỗ trợ duyệt **BFS** và **DFS**). Cùng ngân sách, seed cố định. Mã sinh ra chạy trong sandbox kiểm tra AST | `core/fuzzing.py` |
+| **4** | Fuzzing chuỗi trạng thái | Phát sinh chuỗi trạng thái theo **BFS, DFS** và **Coverage-guided mutation** từ seed paths; phát hiện **Crash, Deadlock** (CWE-833) và vi phạm bất biến (CWE-693, CWE-667) | `core/fuzzing.py` |
 | — | Gộp CWE theo bằng chứng | Ánh xạ CWE theo bảng của học phần; trạng thái v0/v1; lỗi khai báo mà không công cụ nào tái hiện được bị đánh dấu `declared-only` | `core/cwe_analyzer.py` |
 | — | Test case tự đánh giá | Đọc câu "kết quả mong đợi" (vd `Không phát hiện CWE-120 tại parse_webhook_signature`, `AG(shipped -> paid) ĐÚNG`) rồi chấm PASS/FAIL | `core/pipeline.py` |
 | — | Xuất bằng chứng | Markdown, bảng trước/sau, so sánh thiết kế v0 → v1, log thô, mã nguồn, hình PNG + TikZ | `core/reporter.py` |
@@ -221,13 +222,13 @@ uv run pytest
 uv run ruff check core gui tests scripts main.py
 ```
 
-Bộ test gồm 107 test. Một số nhóm chính:
+Bộ test gồm 113 test. Một số nhóm chính:
 
 - **CTL**: kiểm tra từng toán tử; đối chiếu 30 mô hình ngẫu nhiên với bộ duyệt đường đi vét cạn; hồi quy cho lỗi `AG(!(a & b))` của phiên bản cũ.
 - **BMC**: phản ví dụ tối thiểu, đạt hoặc chưa đạt completeness threshold.
 - **Scanner và sanitizer**: mỗi luật có ví dụ dương tính và âm tính; ASan bắt được v0 và sạch trên v1 (tự bỏ qua khi máy không có trình biên dịch).
 - **SMT**: model nằm trong miền int32, wrap-around bit-vector, bản vá cho UNSAT.
-- **Fuzzing**: concolic tìm ra magic value trong khi black-box không tìm ra; kết quả tái tạo được theo seed.
+- **Fuzzing & State Fuzzer**: concolic tìm ra magic value theo cả BFS và DFS; state sequence fuzzer phát sinh chuỗi trạng thái (BFS, DFS, Coverage-guided), phát hiện crash/deadlock trên v0 và sạch 0 crash trên v1; kết quả tái tạo được theo seed.
 - **End-to-end**: v0 có đủ các CWE mong đợi, v1 sạch và 12/12 test case PASS; CLI ghi đủ các file trong `results/`.
 
 ## Cấu trúc mã nguồn

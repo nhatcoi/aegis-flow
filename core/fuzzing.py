@@ -15,9 +15,11 @@ hard-coded bypass was reached (CWE-798).
 from __future__ import annotations
 
 import ast
+import itertools
 import random
 import sys
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -101,6 +103,7 @@ class FuzzResult:
     cwe: str | None = None
     seconds: float = 0.0
     lines_covered: int = 0
+    search_strategy: str = "none"  # "bfs" | "dfs" | "none"
     events: list[str] = field(default_factory=list)
 
     @property
@@ -115,6 +118,35 @@ class FuzzResult:
             self.first_hit, self.first_input = i, args
             self.finding, self.cwe = out.finding, out.cwe
             self.events.append(f"lần {i}: {out.finding} với input {args}")
+
+
+@dataclass
+class StateCrash:
+    kind: str  # "deadlock" | "invariant_violation" | "illegal_transition"
+    state: str
+    path: list[str]
+    message: str
+    cwe: str = "CWE-833"
+
+
+@dataclass
+class StateFuzzResult:
+    name: str
+    version: str
+    strategy: str  # "bfs" | "dfs" | "coverage" | "random_walk"
+    max_depth: int
+    states_discovered: list[str]
+    transitions_fired: list[list[str]]
+    state_coverage: float
+    transition_coverage: float
+    crashes: list[StateCrash] = field(default_factory=list)
+    paths_explored: int = 0
+    seconds: float = 0.0
+    events: list[str] = field(default_factory=list)
+
+    @property
+    def has_crash(self) -> bool:
+        return len(self.crashes) > 0
 
 
 def _random_int(rng: random.Random) -> int:
@@ -283,27 +315,40 @@ class _Unsupported(Exception):
     pass
 
 
-def concolic_fuzz(func: Callable, code: str, kind: str, budget: int = 1000, *,
-                  name: str = "", version: str = "v0", stop_on_hit: bool = False) -> FuzzResult:
+def concolic_fuzz(
+    func: Callable,
+    code: str,
+    kind: str,
+    budget: int = 1000,
+    *,
+    name: str = "",
+    version: str = "v0",
+    stop_on_hit: bool = False,
+    search_strategy: str = "bfs",
+) -> FuzzResult:
     fdef = next(n for n in ast.walk(ast.parse(code)) if isinstance(n, ast.FunctionDef))
     engine = _Concolic(fdef)
-    res = FuzzResult(name or func.__name__, version, "concolic", budget)
+    strategy_label = "concolic"
+    res = FuzzResult(name or func.__name__, version, strategy_label, budget, search_strategy=search_strategy)
     worklist = [tuple(SEED_VALUE for _ in engine.params)]
     explored: set[str] = set()
     t0 = time.perf_counter()
     i = 0
+    is_dfs = search_strategy.lower() == "dfs"
     while worklist and i < budget:
-        args = worklist.pop(0)
+        args = worklist.pop() if is_dfs else worklist.pop(0)
         i += 1
         res.iterations = i
         res.record(i, args, run_oracle(func, kind, args))
         if stop_on_hit and res.found:
             break
         path = engine.run(args)
-        res.events.append(f"lần {i}: input {args}, path condition: {[str(c) for c in path]}")
+        res.events.append(f"lần {i} ({search_strategy.upper()}): input {args}, path condition: {[str(c) for c in path]}")
         if engine.unsupported:
-            res.events.append("Hàm gọi thư viện/môi trường ngoài (os.environ, hmac) mà engine không mô hình hóa "
-                              "được — concolic dừng (giới hạn environment modeling, Ch.4.6).")
+            res.events.append(
+                "Hàm gọi thư viện/môi trường ngoài (os.environ, hmac) mà engine không mô hình hóa "
+                "được — concolic dừng (giới hạn environment modeling, Ch.4.6)."
+            )
         for k in range(len(path)):
             query = path[:k] + [z3.Not(path[k])]
             key = str(query)
@@ -324,7 +369,12 @@ def concolic_fuzz(func: Callable, code: str, kind: str, budget: int = 1000, *,
 # ---------------------------------------------------------------------------
 # Campaign over a generated function
 # ---------------------------------------------------------------------------
-def fuzz_generated(gf: GeneratedFunction, budget: int = 2000, seed: int = 1) -> list[FuzzResult]:
+def fuzz_generated(
+    gf: GeneratedFunction,
+    budget: int = 2000,
+    seed: int = 1,
+    concolic_strategy: str = "bfs",
+) -> list[FuzzResult]:
     """Run the three strategies on v0 and v1 of a generated Python function."""
     if gf.language != "python":
         return []
@@ -335,5 +385,214 @@ def fuzz_generated(gf: GeneratedFunction, budget: int = 2000, seed: int = 1) -> 
         opts = {"name": gf.spec.name, "version": version}
         results.append(blackbox_fuzz(func, kind, budget, seed, **opts))
         results.append(coverage_guided_fuzz(func, kind, budget, seed, **opts))
-        results.append(concolic_fuzz(func, code, kind, budget, **opts))
+        results.append(concolic_fuzz(func, code, kind, budget, search_strategy=concolic_strategy, **opts))
     return results
+
+
+# ---------------------------------------------------------------------------
+# State Machine Fuzzing (Stateful Sequence Fuzzer with BFS / DFS / Coverage)
+# ---------------------------------------------------------------------------
+def state_fuzz(
+    sm: Any,
+    strategy: str = "bfs",
+    max_depth: int = 10,
+    budget: int = 300,
+    seed: int = 1,
+    *,
+    name: str = "",
+    version: str = "v0",
+    seed_paths: list[list[str]] | None = None,
+    known_deadlocks: set[str] | None = None,
+) -> StateFuzzResult:
+    """Fuzz the state machine by generating state transition sequences (Chương 4).
+
+    Strategies:
+    * 'bfs': Level-by-level breadth-first search of state paths up to max_depth.
+    * 'dfs': Depth-first exploration of state paths up to max_depth.
+    * 'coverage': Coverage-guided state sequence generation: mutates paths from seed
+      sequences, saving any path that visits a new state or fires a new transition.
+    * 'random_walk': Random walk exploration without feedback.
+    """
+    t0 = time.perf_counter()
+    rng = random.Random(seed)
+    states = list(sm.states)
+    initial = [s for s in getattr(sm, "initial", []) if s in states] or (states[:1] if states else [])
+    labeling = getattr(sm, "labeling", {})
+    transitions = [list(t) for t in getattr(sm, "transitions", [])]
+
+    succ: dict[str, list[str]] = {s: [] for s in states}
+    for src, dst in transitions:
+        if src in succ and dst in states:
+            succ[src].append(dst)
+
+    strat = strategy.lower()
+    res = StateFuzzResult(name or getattr(sm, "name", "StateMachine"), version, strat, max_depth, [], [], 0.0, 0.0)
+
+    discovered_states: set[str] = set(initial)
+    fired_transitions: set[tuple[str, str]] = set()
+    crashes: list[StateCrash] = []
+    seen_crash_keys: set[tuple[str, str]] = set()
+    paths_count = 0
+
+    def check_crash(path: list[str]) -> StateCrash | None:
+        curr = path[-1]
+        labels = set(labeling.get(curr, []))
+        bad_labels = labels & {
+            "violation",
+            "lock_conflict",
+            "deadlock",
+            "conflict",
+            "shipped_unpaid",
+            "duplicate_capture",
+        }
+        if bad_labels:
+            tag = next(iter(bad_labels))
+            cwe = "CWE-667" if "conflict" in tag or "lock" in tag else "CWE-693"
+            return StateCrash(
+                kind="invariant_violation",
+                state=curr,
+                path=path,
+                message=f"Phát hiện nhãn vi phạm '{tag}' tại trạng thái {curr}",
+                cwe=cwe,
+            )
+        curr_lower = curr.lower()
+        if "unpaid" in curr_lower or "conflict" in curr_lower or "duplicate" in curr_lower:
+            return StateCrash(
+                kind="invariant_violation",
+                state=curr,
+                path=path,
+                message=f"Rơi vào trạng thái vi phạm an toàn logic: {curr}",
+                cwe="CWE-693",
+            )
+        if (known_deadlocks and curr in known_deadlocks) or (
+            len(succ.get(curr, [])) == 0
+            and curr not in {"SUCCEEDED", "FAILED", "REFUNDED", "TERMINATED", "END"}
+        ):
+            return StateCrash(
+                kind="deadlock",
+                state=curr,
+                path=path,
+                message=f"Bế tắc (Deadlock): trạng thái {curr} không có chuyển tiếp tiếp theo",
+                cwe="CWE-833",
+            )
+        return None
+
+    def record_crash(c: StateCrash) -> None:
+        key = (c.kind, c.state)
+        if key not in seen_crash_keys:
+            seen_crash_keys.add(key)
+            crashes.append(c)
+            res.events.append(f"[{strat.upper()}] Crash: {c.message} sau {len(c.path)} bước: {' -> '.join(c.path)}")
+
+    init_paths = [list(p) for p in seed_paths] if seed_paths else [[s] for s in initial]
+
+    if strat == "bfs":
+        worklist = deque(init_paths)
+        while worklist and paths_count < budget:
+            path = worklist.popleft()
+            paths_count += 1
+            curr = path[-1]
+            discovered_states.add(curr)
+            crash = check_crash(path)
+            if crash:
+                record_crash(crash)
+            if len(path) < max_depth:
+                for nxt in succ.get(curr, []):
+                    fired_transitions.add((curr, nxt))
+                    discovered_states.add(nxt)
+                    if path.count(nxt) < 2:
+                        worklist.append(path + [nxt])
+
+    elif strat == "dfs":
+        worklist_stack = list(init_paths)
+        while worklist_stack and paths_count < budget:
+            path = worklist_stack.pop()
+            paths_count += 1
+            curr = path[-1]
+            discovered_states.add(curr)
+            crash = check_crash(path)
+            if crash:
+                record_crash(crash)
+            if len(path) < max_depth:
+                for nxt in reversed(succ.get(curr, [])):
+                    fired_transitions.add((curr, nxt))
+                    discovered_states.add(nxt)
+                    if path.count(nxt) < 2:
+                        worklist_stack.append(path + [nxt])
+
+    elif strat in ("coverage", "random_walk"):
+        corpus = list(init_paths)
+        seen_states = set(discovered_states)
+        seen_trans = set(fired_transitions)
+        is_cov = strat == "coverage"
+
+        while corpus and paths_count < budget:
+            paths_count += 1
+            base = rng.choice(corpus)
+            path = list(base)
+            steps_to_take = rng.randint(1, 4)
+            for _ in range(steps_to_take):
+                if len(path) >= max_depth:
+                    break
+                curr = path[-1]
+                nxts = succ.get(curr, [])
+                if not nxts:
+                    break
+                nxt = rng.choice(nxts)
+                fired_transitions.add((curr, nxt))
+                discovered_states.add(nxt)
+                path.append(nxt)
+                if path.count(nxt) >= 3:
+                    break
+
+            crash = check_crash(path)
+            if crash:
+                record_crash(crash)
+
+            if is_cov:
+                new_states = set(path) - seen_states
+                new_trans = set(itertools.pairwise(path)) - seen_trans
+                if new_states or new_trans:
+                    seen_states |= new_states
+                    seen_trans |= new_trans
+                    corpus.append(path)
+                    res.events.append(
+                        f"[COVERAGE] Tăng độ phủ: +{len(new_states)} state, +{len(new_trans)} trans với chuỗi {' -> '.join(path[-3:])}"
+                    )
+                    if len(corpus) > 50:
+                        corpus.pop(1)
+
+    res.states_discovered = sorted(discovered_states)
+    res.transitions_fired = [list(t) for t in sorted(fired_transitions)]
+    res.state_coverage = len(discovered_states) / len(states) if states else 0.0
+    res.transition_coverage = len(fired_transitions) / len(transitions) if transitions else 0.0
+    res.crashes = crashes
+    res.paths_explored = paths_count
+    res.seconds = time.perf_counter() - t0
+    return res
+
+
+def fuzz_state_machine(
+    sm: Any,
+    budget: int = 300,
+    seed: int = 1,
+    version: str = "v0",
+    max_depth: int = 8,
+    known_deadlocks: set[str] | None = None,
+) -> list[StateFuzzResult]:
+    """Execute BFS, DFS, and Coverage-guided state sequence fuzzing on a state machine."""
+    results = []
+    for strat in ("bfs", "dfs", "coverage"):
+        results.append(
+            state_fuzz(
+                sm,
+                strategy=strat,
+                max_depth=max_depth,
+                budget=budget,
+                seed=seed,
+                version=version,
+                known_deadlocks=known_deadlocks,
+            )
+        )
+    return results
+

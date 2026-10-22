@@ -1,14 +1,14 @@
 % Kripke: payment\_gateway\_v1 (sinh tự động bởi core.reporter)
 \begin{tikzpicture}[->,>=stealth,semithick,every node/.style={draw,rounded corners=2pt,align=center,font=\scriptsize,inner sep=3pt,minimum width=18mm}]
   \node[fill=blue!12] (n_ledger_free) at (0.00,-0.68) {\textbf{ledger\_free}\\{\tiny \{safe\}}};
-  \node[fill=white] (n_webhook_holds) at (3.60,-1.35) {\textbf{webhook\_holds}\\{\tiny \{webhook\_locked\}}};
-  \node[fill=white] (n_recon_holds) at (3.60,-0.00) {\textbf{recon\_holds}\\{\tiny \{recon\_locked\}}};
+  \node[fill=white] (n_webhook_holds) at (3.60,-0.00) {\textbf{webhook\_holds}\\{\tiny \{webhook\_locked\}}};
+  \node[fill=white] (n_recon_holds) at (3.60,-1.35) {\textbf{recon\_holds}\\{\tiny \{recon\_locked\}}};
   \node[fill=blue!12] (n_CREATED) at (0.00,-4.86) {\textbf{CREATED}\\{\tiny \{created\}}};
   \node[fill=white] (n_PENDING) at (3.60,-4.86) {\textbf{PENDING}\\{\tiny \{processing\}}};
-  \node[fill=white] (n_UNKNOWN) at (7.20,-4.86) {\textbf{UNKNOWN}\\{\tiny \{timeout\}}};
+  \node[fill=white] (n_UNKNOWN) at (7.20,-3.51) {\textbf{UNKNOWN}\\{\tiny \{timeout\}}};
   \node[fill=white] (n_RECONCILING) at (10.80,-3.51) {\textbf{RECONCILING}\\{\tiny \{reconciling\}}};
-  \node[fill=white] (n_SUCCEEDED) at (7.20,-6.21) {\textbf{SUCCEEDED}\\{\tiny \{paid\}}};
-  \node[fill=white] (n_FAILED) at (7.20,-3.51) {\textbf{FAILED}\\{\tiny \{failed\}}};
+  \node[fill=white] (n_SUCCEEDED) at (7.20,-4.86) {\textbf{SUCCEEDED}\\{\tiny \{paid\}}};
+  \node[fill=white] (n_FAILED) at (7.20,-6.21) {\textbf{FAILED}\\{\tiny \{failed\}}};
   \node[fill=white] (n_SHIPPED) at (10.80,-4.86) {\textbf{SHIPPED}\\{\tiny \{shipped, paid\}}};
   \node[fill=white] (n_REFUNDING) at (10.80,-6.21) {\textbf{REFUNDING}\\{\tiny \{refunding\}}};
   \node[fill=white] (n_REFUNDED) at (14.40,-4.86) {\textbf{REFUNDED}\\{\tiny \{refunded\}}};

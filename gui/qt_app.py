@@ -105,7 +105,7 @@ còn **concolic** đọc điều kiện trong code nên tìm ra ngay.
 - Bấm một dòng để xem **phản ví dụ, chẩn đoán và log thô** ở panel Chi tiết.
 - *✨ Giải thích bằng AI* chỉ để diễn giải, **không phải bằng chứng**.
 """
-PARAM_DEFAULTS = {"seed": 1, "budget": 2000, "bmc": -1, "timeout": 30}
+PARAM_DEFAULTS = {"seed": 1, "budget": 2000, "bmc": -1, "timeout": 30, "fuzz_search": "bfs"}
 
 
 class PipelineWorker(QObject):
@@ -373,6 +373,10 @@ class MainWindow(QMainWindow):
                               tip="Seed ngẫu nhiên của fuzzer black-box và coverage-guided (tái tạo kết quả)")
         self.spn_budget = _spin(100, 100_000, PARAM_DEFAULTS["budget"], step=500,
                                 tip="Số vòng lặp tối đa cho mỗi chiến lược fuzzing (black-box, coverage, concolic)")
+        self.cbo_fuzz_search = QComboBox()
+        self.cbo_fuzz_search.addItem("BFS (chiều rộng)", "bfs")
+        self.cbo_fuzz_search.addItem("DFS (chiều sâu)", "dfs")
+        self.cbo_fuzz_search.setToolTip("Chiến lược duyệt cây đường đi cho Concolic Fuzzing (BFS = ngắn nhất, DFS = sâu nhất)")
         for title, label, spn in (("Ch.2 · Bộ nhớ C", "Timeout sanitizer", self.spn_timeout),
                                   ("Ch.3 · BMC", "Độ sâu k", self.spn_bmc),
                                   ("Ch.4 · Fuzzing", "Seed", self.spn_seed),
@@ -381,6 +385,8 @@ class MainWindow(QMainWindow):
                 form.addRow(_section(title))
             form.addRow(label, spn)
             spn.valueChanged.connect(self._update_params_label)
+        form.addRow("Duyệt Concolic", self.cbo_fuzz_search)
+        self.cbo_fuzz_search.currentIndexChanged.connect(self._update_params_label)
         btn_reset = QPushButton("Khôi phục mặc định")
         btn_reset.clicked.connect(self._reset_params)
         form.addRow(btn_reset)
@@ -424,13 +430,16 @@ class MainWindow(QMainWindow):
         self.spn_budget.setValue(PARAM_DEFAULTS["budget"])
         self.spn_bmc.setValue(PARAM_DEFAULTS["bmc"])
         self.spn_timeout.setValue(PARAM_DEFAULTS["timeout"])
+        if hasattr(self, "cbo_fuzz_search"):
+            self.cbo_fuzz_search.setCurrentIndex(0)
 
     def _bmc_depth(self) -> int | None:
         return None if self.spn_bmc.value() < 0 else self.spn_bmc.value()
 
     def _update_params_label(self) -> None:
         k = self._bmc_depth()
-        self.btn_params.setText(f"⚙  seed {self.spn_seed.value()} · fuzz {self.spn_budget.value()} · "
+        strat = self.cbo_fuzz_search.currentData() if hasattr(self, "cbo_fuzz_search") else "bfs"
+        self.btn_params.setText(f"⚙  seed {self.spn_seed.value()} · fuzz {self.spn_budget.value()} ({strat.upper()}) · "
                                 f"k {'auto' if k is None else k} · {self.spn_timeout.value()}s")
 
     def _tab_overview(self) -> QWidget:
@@ -537,9 +546,16 @@ class MainWindow(QMainWindow):
         return w
 
     def _tab_fuzz(self) -> QWidget:
+        w = QSplitter(Qt.Orientation.Vertical)
+        w.setChildrenCollapsible(False)
         self.tbl_fuzz = _table(["Hàm", "Bản", "Chiến lược", "Lần thử", "Lỗi", "Lần đầu", "Input", "Loại"])
         self.tbl_fuzz.itemSelectionChanged.connect(self._on_fuzz_selected)
-        return self.tbl_fuzz
+        w.addWidget(self.tbl_fuzz)
+        self.tbl_state_fuzz = _table(["Fuzz chuỗi trạng thái", "Độ sâu", "Đường đi", "Phủ State", "Phủ Chuyển tiếp", "Lỗi / Crash"])
+        self.tbl_state_fuzz.itemSelectionChanged.connect(self._on_state_fuzz_selected)
+        w.addWidget(self.tbl_state_fuzz)
+        w.setSizes([320, 240])
+        return w
 
     def _tab_cwe(self) -> QWidget:
         self.tbl_cwe = _table(["CWE", "Vị trí", "Mức", "Trạng thái", "v0", "v1", "Công cụ"])
@@ -659,6 +675,8 @@ class MainWindow(QMainWindow):
         self._reset_steps()
         for t in (self.tbl_ctl, self.tbl_mem, self.tbl_bmc, self.tbl_smt, self.tbl_ast, self.tbl_fuzz, self.tbl_cwe):
             t.setRowCount(0)
+        if hasattr(self, "tbl_state_fuzz"):
+            self.tbl_state_fuzz.setRowCount(0)
         self.txt_report.clear()
         s = self.spec
         sm = s.state_machine
@@ -716,12 +734,14 @@ class MainWindow(QMainWindow):
         for key in STEPS:
             self._set_step(key, "run")
         bmc_depth = self._bmc_depth()
-        self._log(f"Chạy pipeline (seed={self.spn_seed.value()}, fuzz={self.spn_budget.value()}, "
+        fuzz_search = self.cbo_fuzz_search.currentData() if hasattr(self, "cbo_fuzz_search") else "bfs"
+        self._log(f"Chạy pipeline (seed={self.spn_seed.value()}, fuzz={self.spn_budget.value()} [{fuzz_search.upper()}], "
                   f"BMC k={'auto' if bmc_depth is None else bmc_depth}, timeout={self.spn_timeout.value()}s)…")
         self.statusBar().showMessage("Đang chạy pipeline…")
         self.thread = QThread()
         self.worker = PipelineWorker(self.spec, self.spn_seed.value(), self.spn_budget.value(),
-                                     bmc_depth=bmc_depth, sanitizer_timeout=self.spn_timeout.value())
+                                     bmc_depth=bmc_depth, sanitizer_timeout=self.spn_timeout.value(),
+                                     fuzz_search=fuzz_search)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._on_done)
@@ -808,9 +828,16 @@ class MainWindow(QMainWindow):
                                   for v, m in rep.metrics])
 
         # Ch.4
-        self._fill(self.tbl_fuzz, [[r.function, r.version, r.strategy, r.iterations,
+        self._fill(self.tbl_fuzz, [[r.function, r.version,
+                                    f"{r.strategy} ({r.search_strategy.upper()})" if r.search_strategy != "none" else r.strategy,
+                                    r.iterations,
                                     f"{r.hits}" + (" FAIL" if r.found else " PASS"), r.first_hit or "—",
                                     r.first_input or "—", r.finding or "—"] for r in rep.fuzz], status_col=4)
+        if hasattr(self, "tbl_state_fuzz") and getattr(rep, "state_fuzz", None):
+            self._fill(self.tbl_state_fuzz, [[r.strategy.upper(), r.max_depth, r.paths_explored,
+                                              f"{r.state_coverage * 100:.1f}%", f"{r.transition_coverage * 100:.1f}%",
+                                              f"{len(r.crashes)}" + (" FAIL" if r.has_crash else " PASS")]
+                                             for r in rep.state_fuzz], status_col=5)
 
         # CWE
         self._fill(self.tbl_cwe, [[f.cwe_id, f.source_component, f.severity,
@@ -994,10 +1021,34 @@ class MainWindow(QMainWindow):
         row = self.tbl_fuzz.currentRow()
         if self.report and 0 <= row < len(self.report.fuzz):
             r = self.report.fuzz[row]
-            self._inspect(f"<h3>{r.function} · {r.version} · {r.strategy}</h3>"
+            strat = f"{r.strategy} ({r.search_strategy.upper()})" if r.search_strategy != "none" else r.strategy
+            self._inspect(f"<h3>{r.function} · {r.version} · {strat}</h3>"
                           f"<p>{r.hits}/{r.iterations} lần thử gây lỗi, {r.seconds * 1000:.1f} ms</p>"
                           f"<p><b>Lần đầu:</b> {r.first_hit or '—'} · <b>Input:</b> {r.first_input or '—'} · "
                           f"<b>Loại:</b> {r.finding or '—'}</p>" + _raw("\n".join(r.events[:200])))
+
+    def _on_state_fuzz_selected(self) -> None:
+        row = self.tbl_state_fuzz.currentRow()
+        if self.report and getattr(self.report, "state_fuzz", None) and 0 <= row < len(self.report.state_fuzz):
+            r = self.report.state_fuzz[row]
+            crashes_html = ""
+            if r.crashes:
+                items = "".join(f"<li><b>[{c.kind.upper()} · {c.cwe}]</b> tại <code>{c.state}</code>: {' -> '.join(c.path)}<br><i>{c.message}</i></li>"
+                                for c in r.crashes)
+                crashes_html = f"<p><b>Phát hiện {len(r.crashes)} Crash / Vi phạm:</b></p><ul>{items}</ul>"
+            else:
+                crashes_html = "<p style='color: #41cd52;'><b>✓ 0 crash: Không tìm thấy vi phạm bất biến nào trên các chuỗi trạng thái.</b></p>"
+            events_text = "\n".join(r.events[:200]) if r.events else "Không có sự kiện bất thường."
+            self._inspect(
+                f"<h3>Fuzzing chuỗi trạng thái · {r.strategy.upper()}</h3>"
+                f"<p><b>Độ sâu k:</b> {r.max_depth} · <b>Số chuỗi thử nghiệm:</b> {r.paths_explored} · "
+                f"<b>Thời gian:</b> {r.seconds * 1000:.1f} ms</p>"
+                f"<p><b>Độ phủ trạng thái:</b> {r.state_coverage * 100:.1f}% ({len(r.states_discovered)} states)<br>"
+                f"<b>Độ phủ chuyển tiếp:</b> {r.transition_coverage * 100:.1f}% ({len(r.transitions_fired)} transitions)</p>"
+                f"{crashes_html}"
+                f"<p><b>Các trạng thái đã khám phá:</b><br><code>{', '.join(r.states_discovered)}</code></p>"
+                + _raw(events_text)
+            )
 
     def _on_cwe_selected(self) -> None:
         row = self.tbl_cwe.currentRow()
