@@ -330,13 +330,13 @@ def concolic_fuzz(
     engine = _Concolic(fdef)
     strategy_label = "concolic"
     res = FuzzResult(name or func.__name__, version, strategy_label, budget, search_strategy=search_strategy)
-    worklist = [tuple(SEED_VALUE for _ in engine.params)]
+    worklist = deque([tuple(SEED_VALUE for _ in engine.params)])
     explored: set[str] = set()
     t0 = time.perf_counter()
     i = 0
     is_dfs = search_strategy.lower() == "dfs"
     while worklist and i < budget:
-        args = worklist.pop() if is_dfs else worklist.pop(0)
+        args = worklist.pop() if is_dfs else worklist.popleft()
         i += 1
         res.iterations = i
         res.record(i, args, run_oracle(func, kind, args))
@@ -421,9 +421,11 @@ def state_fuzz(
     transitions = [list(t) for t in getattr(sm, "transitions", [])]
 
     succ: dict[str, list[str]] = {s: [] for s in states}
-    for src, dst in transitions:
-        if src in succ and dst in states:
-            succ[src].append(dst)
+    for t in transitions:
+        if len(t) >= 2:
+            src, dst = t[0], t[1]
+            if src in succ and dst in states:
+                succ[src].append(dst)
 
     strat = strategy.lower()
     res = StateFuzzResult(name or getattr(sm, "name", "StateMachine"), version, strat, max_depth, [], [], 0.0, 0.0)
@@ -466,7 +468,7 @@ def state_fuzz(
             )
         if (known_deadlocks and curr in known_deadlocks) or (
             len(succ.get(curr, [])) == 0
-            and curr not in {"SUCCEEDED", "FAILED", "REFUNDED", "TERMINATED", "END"}
+            and curr.upper() not in {"SUCCEEDED", "FAILED", "REFUNDED", "TERMINATED", "END", "DONE"}
         ):
             return StateCrash(
                 kind="deadlock",
@@ -562,10 +564,11 @@ def state_fuzz(
                     if len(corpus) > 50:
                         corpus.pop(1)
 
+    unique_trans = {tuple(t[:2]) for t in transitions if len(t) >= 2}
     res.states_discovered = sorted(discovered_states)
     res.transitions_fired = [list(t) for t in sorted(fired_transitions)]
     res.state_coverage = len(discovered_states) / len(states) if states else 0.0
-    res.transition_coverage = len(fired_transitions) / len(transitions) if transitions else 0.0
+    res.transition_coverage = len(fired_transitions) / len(unique_trans) if unique_trans else 0.0
     res.crashes = crashes
     res.paths_explored = paths_count
     res.seconds = time.perf_counter() - t0
