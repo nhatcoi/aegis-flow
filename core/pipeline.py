@@ -21,6 +21,7 @@ import z3
 from .arithmetic_z3 import SMTCheckResult, check_all_arithmetic
 from .bmc import BMCResult, bmc_properties
 from .c_analyzer import Finding, analyze_c_source
+from .c_fuzzing import CFuzzResult, fuzz_c_function
 from .codegen import GeneratedFunction, generate_all_functions
 from .cwe_analyzer import SecurityAuditReport, analyze_security_vulnerabilities
 from .fuzzing import FuzzResult, StateFuzzResult, fuzz_generated, fuzz_state_machine
@@ -53,6 +54,7 @@ class PipelineReport:
     metrics: list[tuple[str, FunctionMetrics]] = field(default_factory=list)
     smt: list[SMTCheckResult] = field(default_factory=list)
     fuzz: list[FuzzResult] = field(default_factory=list)
+    c_fuzz: list[CFuzzResult] = field(default_factory=list)
     state_fuzz: list[StateFuzzResult] = field(default_factory=list)
     fuzz_replays: list = field(default_factory=list)
     audit: SecurityAuditReport | None = None
@@ -95,7 +97,7 @@ def evaluate_test_case(tc: TestCase, rep: PipelineReport) -> TestCaseResult:
     [tại <hàm>], and a concrete input pair "(a, b)" that a fuzzer must find.
     """
     exp = tc.expected_result
-    checks: list[tuple[bool, str]] = []
+    checks: list[tuple[bool | None, str]] = []
     components = [fn.name for fn in rep.spec.functions if fn.name in exp]
     components += [s.name for s in rep.smt if s.name in exp]
 
@@ -134,8 +136,13 @@ def evaluate_test_case(tc: TestCase, rep: PipelineReport) -> TestCaseResult:
     m = re.search(r"ZeroDivisionError|crash|bypass|vượt qua xác thực", exp, re.IGNORECASE)
     if m:
         fz = [r for r in rep.fuzz if r.version == "v0" and (not components or r.function in components)]
+        if m.group(0).lower() == 'crash':
+            fz += [r for r in rep.c_fuzz if r.version == 'v0' and (not components or r.function in components)]
         found = [r for r in fz if r.found]
-        if _negated(exp, m.start()):
+        incomplete = not fz or any(r.status not in {'no_finding', 'clean', 'detected'} and not r.found for r in fz)
+        if not found and incomplete:
+            checks.append((None, 'fuzzing: chưa đủ bằng chứng thực thi để kết luận'))
+        elif _negated(exp, m.start()):
             checks.append((not found, f"fuzzing: {len(found)}/{len(fz)} chiến dịch tìm ra lỗi (mong đợi 0)"))
         else:
             checks.append((bool(found), f"fuzzing: {len(found)}/{len(fz)} chiến dịch tìm ra lỗi (mong đợi ≥ 1)"))
@@ -143,12 +150,20 @@ def evaluate_test_case(tc: TestCase, rep: PipelineReport) -> TestCaseResult:
     if m:
         target = (int(m.group(1)), int(m.group(2)))
         hit = [r for r in rep.fuzz if r.version == "v0" and r.first_input == target]
+        arithmetic_names = {fn.name for fn in rep.spec.functions if fn.kind.lower() == 'arithmetic'}
+        for r in rep.c_fuzz:
+            if r.version != 'v0' or r.function not in arithmetic_names or (components and r.function not in components):
+                continue
+            if any(tuple(map(int, bytes.fromhex(t['stdin_hex']).split())) == target
+                   for t in r.trials if t.get('detections')):
+                hit.append(r)
         checks.append((bool(hit), f"input {target} {'được' if hit else 'không được'} fuzzer tìm ra"))
 
     if not checks:
         return TestCaseResult(tc, "NOT_EVALUATED", "Kết quả mong đợi không nêu tiêu chí kiểm tra tự động được.")
-    ok = all(c for c, _ in checks)
-    return TestCaseResult(tc, "PASS" if ok else "FAIL", "; ".join(r for _, r in checks))
+    status = ('FAIL' if any(c is False for c, _ in checks) else
+              'NOT_EVALUATED' if any(c is None for c, _ in checks) else 'PASS')
+    return TestCaseResult(tc, status, "; ".join(r for _, r in checks))
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +172,15 @@ def evaluate_test_case(tc: TestCase, rep: PipelineReport) -> TestCaseResult:
 def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
                  run_tools: bool = True, workdir: Path | None = None,
                  bmc_depth: int | None = None, sanitizer_timeout: int = 30,
-                 fuzz_search: str = "bfs", fuzz_solver_timeout_ms: int = 1000) -> PipelineReport:
+                 fuzz_search: str = "bfs", fuzz_solver_timeout_ms: int = 1000,
+                 c_fuzz_budget: int = 32) -> PipelineReport:
     """``bmc_depth=None`` runs BMC up to the completeness threshold (reachability diameter)."""
     rep = PipelineReport(spec, seed, fuzz_budget,
                          environment=environment_info(seed, fuzz_budget, bmc_depth, sanitizer_timeout))
+    if c_fuzz_budget < 0:
+        raise ValueError('c_fuzz_budget must be >= 0')
+    rep.environment['ngân sách fuzzing C / phiên bản'] = str(c_fuzz_budget)
+    rep.environment['fuzzing C'] = 'ASan/UBSan; dừng ở finding đầu tiên' if run_tools and c_fuzz_budget else 'tắt'
 
     def timed(key: str):
         class _T:
@@ -215,6 +235,10 @@ def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
         for gf in rep.functions:
             rep.fuzz.extend(fuzz_generated(gf, fuzz_budget, seed, concolic_strategy=fuzz_search,
                                            solver_timeout_ms=fuzz_solver_timeout_ms))
+            if run_tools and c_fuzz_budget and gf.language == 'c':
+                for version in ('v0', 'v1'):
+                    rep.c_fuzz.append(fuzz_c_function(gf, version, c_fuzz_budget, seed,
+                                                     timeout=sanitizer_timeout))
         if spec.state_machine and spec.state_machine.states:
             deadlocks = set(rep.kripke.deadlock_states) if rep.kripke else None
             rep.state_fuzz = fuzz_state_machine(
@@ -227,7 +251,7 @@ def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
     with timed("cwe"):
         rep.audit = analyze_security_vulnerabilities(
             spec, rep.kripke, rep.smt, functions=rep.functions, static=rep.static,
-            sanitizers=rep.sanitizers, fuzz=rep.fuzz, bmc=rep.bmc)
+            sanitizers=rep.sanitizers, fuzz=rep.fuzz, bmc=rep.bmc, c_fuzz=rep.c_fuzz)
         rep.test_results = [evaluate_test_case(tc, rep) for tc in spec.test_cases]
     return rep
 
@@ -237,6 +261,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("spec", help="Đặc tả .json hoặc .xlsx")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--budget", type=int, default=2000, help="Số lần thử fuzzing cho mỗi chiến lược")
+    parser.add_argument('--c-fuzz-budget', type=int, default=32,
+                        help='Số input tối đa/hàm C/phiên bản với ASan/UBSan; 0=tắt; dừng khi tìm thấy lỗi')
     parser.add_argument("--fuzz-search", choices=["bfs", "dfs"], default="bfs",
                         help="Chiến lược duyệt cây đường đi cho Concolic Fuzzing (mặc định: bfs)")
     parser.add_argument("--fuzz-solver-timeout", type=int, default=1000, metavar="MS",
@@ -256,7 +282,8 @@ def main(argv: list[str] | None = None) -> int:
     spec = load_specification(args.spec)
     out = args.out or Path("results") / spec.name
     opts = {"run_tools": not args.no_tools, "bmc_depth": args.bmc_depth,
-            "sanitizer_timeout": args.sanitizer_timeout, "fuzz_search": args.fuzz_search, "fuzz_solver_timeout_ms": args.fuzz_solver_timeout}
+            "sanitizer_timeout": args.sanitizer_timeout, "fuzz_search": args.fuzz_search,
+            "fuzz_solver_timeout_ms": args.fuzz_solver_timeout, "c_fuzz_budget": args.c_fuzz_budget}
     rep = run_pipeline(spec, args.seed, args.budget, workdir=out / "build", **opts)
     write_results(rep, out)
     if args.compare:

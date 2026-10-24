@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from .arithmetic_z3 import SMTCheckResult
 from .bmc import BMCResult
 from .c_analyzer import Finding, analyze_c_source
+from .c_fuzzing import CFuzzResult
 from .codegen import GeneratedFunction, generate_all_functions
 from .fuzzing import FuzzResult, fuzz_generated
 from .kripke import KripkeCheckReport
@@ -200,6 +201,7 @@ def analyze_security_vulnerabilities(
     sanitizers: list[SanitizerRun] | None = None,
     fuzz: list[FuzzResult] | None = None,
     bmc: list[BMCResult] | None = None,
+    c_fuzz: list[CFuzzResult] | None = None,
 ) -> SecurityAuditReport:
     """Aggregate tool evidence into CWE findings.
 
@@ -282,6 +284,18 @@ def analyze_security_vulnerabilities(
                      f"{r.strategy}: {r.finding} ở lần thử {r.first_hit}/{r.budget}, input {r.first_input}")
 
     # --- v1 evidence (after) --------------------------------------------------------
+    for r in c_fuzz or []:
+        if r.version != 'v0':
+            continue
+        for trial in r.trials:
+            for kind, _cwe, line in trial['detections']:
+                key = SANITIZER_KEY.get(kind)
+                if key:
+                    f = col.get(key, r.function, 'Ch.4', f'dòng {line}' if line else '')
+                    col.add_tool(f, 'Fuzzing C (ASan/UBSan)',
+                                 f"{kind}; lần {trial['iteration']}/{r.budget}; input {trial['input']}; "
+                                 f"stdin_hex={trial['stdin_hex']}")
+
     for f in col.items.values():
         if f.chapter == "Ch.1" or (f.chapter == "Ch.3" and f.source_component not in by_name):
             continue
@@ -296,9 +310,13 @@ def analyze_security_vulnerabilities(
         v1_fuzz = [r for r in fuzz if r.function == name and r.version == "v1"]
         for r in v1_fuzz:
             after.append(f"{r.strategy} v1: {r.hits}/{r.iterations} lỗi")
+        v1_native = [r for r in c_fuzz or [] if r.function == name and r.version == 'v1']
+        for r in v1_native:
+            after.append(f'Fuzzing C ASan/UBSan v1: {r.hits}/{r.iterations}; {r.verdict}; {r.stop_reason}')
         if after:
             f.after = after + f.after
-            f.fixed = not v1_static and all(r.status == "clean" for r in v1_runs) and not any(r.found for r in v1_fuzz)
+            f.fixed = (not v1_static and all(r.status == "clean" for r in v1_runs)
+                       and not any(r.found for r in v1_fuzz) and all(r.status == 'clean' for r in v1_native))
 
     # --- declared but not reproduced ----------------------------------------------
     for fn in spec.functions:

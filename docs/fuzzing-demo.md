@@ -11,7 +11,7 @@ uv run python main.py
 1. Chọn `payment_gateway_v0_spec.xlsx`.
 2. Mở cấu hình ⚙: seed = 1, ngân sách = 2.000, concolic BFS, timeout Z3 fuzzing = 1.000 ms.
 3. Bấm Chạy pipeline và chờ hoàn tất.
-4. Mở tab Ch.4 Fuzzing. Bảng phía trên có hai nhóm: Thực thi hàm Python và Chuỗi trạng thái trên mô hình đặc tả.
+4. Mở tab Ch.4 Fuzzing. Bảng phía trên có ba nhóm: Thực thi hàm Python, Chuỗi trạng thái trên mô hình đặc tả và C · ASan/UBSan.
 5. Chọn một dòng chiến dịch. Phía dưới hiển thị quy trình 6 bước của đúng hàm, phiên bản và chiến lược đó.
 
 Một đặc tả có thể sinh cả mã v0 và mã v1; cột Bản cho biết biến thể đang được chạy. Chạy file đặc tả v1 riêng còn kiểm tra thiết kế trạng thái đã sửa.
@@ -119,7 +119,13 @@ Không gọi model Z3 là một hệ thống thanh toán mới: đây là phép 
 
 Chọn input bypass ở bước 2, mở bước 5 và bấm Replay. Với cấu hình mặc định chưa đặt WEBHOOK_SECRET, bản sửa từ chối và trả False. Nếu môi trường có bí mật cấu hình, đọc output thực tế; True với thông tin xác thực hợp lệ cần được diễn giải theo chính sách oracle, không tự động suy ra cửa hậu.
 
-Bản v1 gọi os.environ/hmac nên interpreter concolic hiện không mô hình hóa được đoạn này. Chiến dịch phải hiện **CHƯA ĐỦ KẾT LUẬN**, lý do unsupported; không dùng việc concolic dừng sớm làm bằng chứng bao phủ hết nhánh.
+Bản v1 đã được hỗ trợ mô hình `os.environ.get` với tên khóa cố định và `hmac.compare_digest`
+cho cặp số int32 định dạng thập phân `a:b`. Khi chưa đặt WEBHOOK_SECRET, nhánh từ chối được thực thi,
+query đảo nhánh trả UNSAT và chiến dịch có thể kết thúc sau một input vì không còn đường khả thi
+trong cấu hình đó. Khi có cấu hình, solver khám phá kết quả khớp/không khớp; xác thực đúng bí mật
+không bị oracle coi là bypass. Xem mục “giả định / phạm vi” ở bước 1: kết luận chỉ áp dụng cho
+cấu hình cố định của chiến dịch, không phải mọi biến môi trường hoặc tính chất timing của hmac.
+Các cú pháp/lời gọi thư viện ngoài phạm vi này vẫn báo **CHƯA ĐỦ KẾT LUẬN** khi chưa có mô hình.
 
 Lời trình bày:
 
@@ -204,3 +210,31 @@ Replay thao tác từ GUI sẽ được lưu khi xuất sau đó. CLI không t�
 7. 30 giây: giới hạn, đặc biệt unsupported và ý nghĩa “chưa thấy lỗi”.
 
 Câu kết: “Phần Chương 4 cho thấy input được sinh từ đâu, chạy qua đâu, output thế nào và cách tái hiện. Các kết luận đều gắn với phạm vi chạy; CTL/BMC/SMT bổ sung các bảo đảm mà fuzzing hữu hạn không cung cấp.”
+
+## 9. Fuzzing C có ASan/UBSan
+
+Ch.4 có thêm nhóm **C · ASan/UBSan**. Trong cấu hình ⚙, đặt ngân sách C (mặc định 32 input
+cho mỗi hàm và mỗi phiên bản; 0 = tắt). Timeout dùng chung mục Timeout sanitizer.
+
+```text
+Hàm C + seed + ngân sách
+  → biên dịch với -fsanitize=address,undefined
+  → sinh input biên, sau đó ngẫu nhiên có seed
+  → mỗi input chạy qua stdin trong một tiến trình riêng
+  → ASan/UBSan chẩn đoán lỗi
+  → lưu stdin chính xác + log + mã nguồn/harness + cấu hình
+```
+
+1. Chọn `parse_webhook_signature`, v0 trong nhóm C.
+2. Xem các chuỗi dài 0, buffer_size−1, buffer_size, … đã thực sự chạy. Chuỗi có độ dài bằng
+   buffer_size đã cần thêm byte NUL nên có thể gây tràn trong v0.
+3. Chọn dòng có sanitizer detection, xem `stdin_hex` và log `stack-buffer-overflow`.
+4. Mở Replay v0/v1, bấm Replay. Cùng bytes được chạy lại trên cả hai bản, có hash mã và log.
+5. Xuất bằng chứng; mở `fuzz_runs/<run_id>/c_*/REPLAY.md` và `crash_*.stdin`/`crash_*.log`.
+
+Chiến dịch dừng ở finding đầu tiên; cột Đã chạy/Budget hiển thị phạm vi thật. Đây là black-box,
+không đo native coverage. Không có solver Z3 trong chiến dịch này. `arithmetic` sinh cặp int32
+để UBSan bắt tràn số; `alloc_release` không nhận tham số nên fuzzer thay đổi số lần gọi từ 1 đến 8.
+Thiếu compiler hoặc build lỗi là chưa đủ kết luận; timeout/exit bất thường không có chẩn đoán sanitizer
+cũng là chưa đủ kết luận. Finding đã xuất trước timeout vẫn được giữ, kèm lý do dừng timeout.
+Trên macOS LeakSanitizer bị tắt, vì vậy không lấy chiến dịch sạch làm xác nhận động CWE-401.

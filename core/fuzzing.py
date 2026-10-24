@@ -9,20 +9,26 @@
   implicit branch ``divisor != 0`` so the solver can target the crash.
 
 The oracle is kind-specific: any exception is a crash (CWE-369 for division,
-CWE-248 otherwise); for ``magic_value`` functions returning True means the
-hard-coded bypass was reached (CWE-798).
+CWE-248 otherwise); for vulnerable ``magic_value`` functions returning True
+means the hard-coded bypass was reached (CWE-798). Configured authentication
+accepts True only for credentials matching the configured secret. Library
+models use a fixed environment and do not analyze authentication timing.
 """
 from __future__ import annotations
 
 import ast
+import hmac
 import itertools
+import os
 import random
+import re
 import sys
 import time
 import traceback
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any
 
 import z3
@@ -86,8 +92,11 @@ def run_oracle(func: Callable, kind: str, args: tuple) -> Outcome:
         return Outcome("ZeroDivisionError", "CWE-369", traceback=traceback.format_exc())
     except Exception as e:  # noqa: BLE001 - every uncaught exception is a crash for the oracle
         return Outcome(type(e).__name__, "CWE-248", traceback=traceback.format_exc())
-    if kind == "magic_value" and value is True:
-        return Outcome("bypass", "CWE-798", value)
+    if kind in {'magic_value', 'configured_auth'} and value is True:
+        expected = os.environ.get('WEBHOOK_SECRET', '')
+        authorized = kind == 'configured_auth' and bool(expected) and ':'.join(map(str, args)) == expected
+        if not authorized:
+            return Outcome("bypass", "CWE-798", value)
     return Outcome(None, None, value)
 
 
@@ -113,6 +122,7 @@ class FuzzResult:
     status: str = "not_started"
     stop_reason: str = ""
     solver_timeout_ms: int = 1000
+    assumptions: list[str] = field(default_factory=list)
     _covered: set[int] = field(default_factory=set, repr=False)
 
     @property
@@ -315,10 +325,17 @@ def coverage_guided_fuzz(func: Callable, kind: str, budget: int = 1000, seed: in
 class _Concolic:
     """Concrete + symbolic interpreter for the restricted function subset."""
 
-    def __init__(self, fdef: ast.FunctionDef):
+    def __init__(self, fdef: ast.FunctionDef, namespace: dict):
         self.fdef = fdef
         self.unsupported = False
         self.params = [a.arg for a in fdef.args.args]
+        self.environment = dict(os.environ)
+        self.assumptions: list[str] = []
+        self.globals = {'__builtins__': {'str': str}}
+        if namespace.get('os') is os:
+            self.globals['os'] = SimpleNamespace(environ=self.environment)
+        if namespace.get('hmac') is hmac:
+            self.globals['hmac'] = hmac
 
     def run(self, args: tuple) -> list[Any]:
         """Return the path condition (list of Z3 bools) followed by `args`."""
@@ -341,11 +358,16 @@ class _Concolic:
         for st in stmts:
             if isinstance(st, ast.Return):
                 if st.value is not None:
-                    self._eval(st.value)
+                    value = self._eval(st.value)
+                    cond = self._sym(st.value)
+                    if z3.is_bool(cond) and not isinstance(st.value, ast.Constant):
+                        self.path.append(cond if value else z3.Not(cond))
+                        self.branches.append({'line': st.lineno, 'condition': ast.unparse(st.value),
+                                              'taken': bool(value), 'kind': 'return_predicate'})
                 raise _Return
             if isinstance(st, ast.If):
                 taken = bool(self._eval(st.test))
-                cond = self._sym(st.test)
+                cond = self._truth(self._sym(st.test))
                 if cond is None:
                     raise _Unsupported
                 self.path.append(cond if taken else z3.Not(cond))
@@ -359,6 +381,9 @@ class _Concolic:
                 raise _Unsupported
 
     def _eval(self, node):
+        calls = [child for child in ast.walk(node) if isinstance(child, ast.Call)]
+        if calls and (self._sym(node) is None or any(self._sym(call) is None for call in calls)):
+            raise _Unsupported
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.FloorDiv, ast.Div, ast.Mod)):
             divisor = self._sym(node.right)
             if divisor is not None:
@@ -367,11 +392,73 @@ class _Concolic:
 
     def _eval_plain(self, node):
         expr = ast.Expression(body=node)
-        return eval(compile(expr, "<concolic>", "eval"), {"__builtins__": {}}, dict(self.conc))
+        return eval(compile(expr, "<concolic>", "eval"), self.globals, dict(self.conc))
+
+    @staticmethod
+    def _truth(value):
+        if z3.is_bool(value):
+            return value
+        if z3.is_arith(value):
+            return value != 0
+        if z3.is_string(value):
+            return z3.Length(value) != 0
+        return None
+
+    def _library_call(self, node):
+        name = ast.unparse(node.func)
+        if name == 'os.environ.get' and 'os' in self.globals:
+            if node.keywords or not 1 <= len(node.args) <= 2:
+                return None
+            if not all(isinstance(a, ast.Constant) and isinstance(a.value, str) for a in node.args):
+                return None
+            value = self._eval_plain(node)
+            if not isinstance(value, str):
+                return None
+            assumption = f'os.environ.get({node.args[0].value}): cấu hình cố định trong chiến dịch; không duyệt mọi cấu hình.'
+            if assumption not in self.assumptions:
+                self.assumptions.append(assumption)
+            return z3.StringVal(value)
+        if name != 'hmac.compare_digest' or 'hmac' not in self.globals or node.keywords or len(node.args) != 2:
+            return None
+        template, expected = node.args
+        # Exact summary for the generated canonical decimal pair; no cryptography/timing claims.
+        if not isinstance(template, ast.JoinedStr) or len(template.values) != 3:
+            return None
+        left, sep, right = template.values
+        if not (isinstance(sep, ast.Constant) and sep.value == ':' and
+                all(isinstance(v, ast.FormattedValue) and v.conversion == -1 and v.format_spec is None
+                    and isinstance(v.value, ast.Name) and v.value.id in self.params for v in (left, right))):
+            return None
+        fixed = self._sym(expected)
+        if not z3.is_string_value(fixed):
+            return None
+        text = fixed.as_string()
+        if not text.isascii():
+            return None
+        assumption = 'hmac.compare_digest: mô hình kết quả bằng nhau của chuỗi int32:int32; không phân tích timing.'
+        if assumption not in self.assumptions:
+            self.assumptions.append(assumption)
+        if not re.fullmatch(r'-?(?:0|[1-9][0-9]*):-?(?:0|[1-9][0-9]*)', text):
+            return z3.BoolVal(False)
+        a, b = text.split(':')
+        # Noncanonical -0, enormous integers and values outside int32 cannot match an int32 f-string.
+        if len(a) > 11 or len(b) > 11:
+            return z3.BoolVal(False)
+        x, y = int(a), int(b)
+        if str(x) != a or str(y) != b:
+            return z3.BoolVal(False)
+        return z3.And(self.sym[left.value.id] == x, self.sym[right.value.id] == y)
 
     def _sym(self, node):
         from .arithmetic_z3 import _ast_to_z3
         try:
+            if isinstance(node, ast.Call):
+                return self._library_call(node)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return z3.StringVal(node.value)
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+                truth = self._truth(self._sym(node.operand))
+                return z3.Not(truth) if truth is not None else None
             return _ast_to_z3(node, {k: v for k, v in self.sym.items() if v is not None})
         except Exception:  # noqa: BLE001 - unsupported expression stays concrete
             return None
@@ -402,7 +489,7 @@ def concolic_fuzz(
     if solver_timeout_ms < 1:
         raise ValueError("Solver timeout must be positive")
     fdef = next(n for n in ast.walk(ast.parse(code)) if isinstance(n, ast.FunctionDef))
-    engine = _Concolic(fdef)
+    engine = _Concolic(fdef, func.__globals__)
     res = FuzzResult(name or func.__name__, version, "concolic", budget,
                      search_strategy=search_strategy, solver_timeout_ms=solver_timeout_ms)
     worklist = deque([(tuple(SEED_VALUE for _ in engine.params), None, None)])
@@ -416,6 +503,7 @@ def concolic_fuzz(
         trial = res.observe(func, kind, i, args, origin="solver" if query_id else "seed",
                             parent_iteration=parent, query_id=query_id)
         path = engine.run(args)
+        res.assumptions = list(engine.assumptions)
         trial.update(path_condition=[str(c) for c in path], branches=engine.branches,
                      pending_inputs=len(worklist), symbolic_supported=not engine.unsupported)
         res.events.append(f"lần {i} ({search_strategy.upper()}): input {args}, "
@@ -479,9 +567,9 @@ def fuzz_generated(
     """Run the three strategies on v0 and v1 of a generated Python function."""
     if gf.language != "python":
         return []
-    kind = gf.spec.kind.lower()
     results = []
     for version, code in (("v0", gf.code_vulnerable), ("v1", gf.code_safe)):
+        kind = generated_oracle_kind(gf, version)
         func = load_function(code, gf.spec.name)
         opts = {"name": gf.spec.name, "version": version}
         results.append(blackbox_fuzz(func, kind, budget, seed, **opts))
@@ -491,6 +579,14 @@ def fuzz_generated(
     for result in results:
         result.seed = seed
     return results
+
+
+def generated_oracle_kind(gf: GeneratedFunction, version: str) -> str:
+    """A successful configured authentication is not the hardcoded bypass oracle."""
+    code = gf.code_vulnerable if version == 'v0' else gf.code_safe
+    if gf.spec.kind.lower() == 'magic_value' and code == gf.code_safe:
+        return 'configured_auth'
+    return gf.spec.kind.lower()
 
 
 # ---------------------------------------------------------------------------

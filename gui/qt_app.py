@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -63,6 +64,7 @@ from core.pipeline import PipelineReport, run_pipeline
 from core.reporter import BMC_VI, STATUS_VI, before_after_table, generate_markdown_report, write_results
 from core.spec_loader import Specification, load_specification
 
+from .c_fuzz_workflow import CFuzzWorkflow
 from .fuzz_workflow import FuzzWorkflow
 from .spec_draft_dialog import SpecDraftDialog
 from .theme import TOKENS, stylesheet
@@ -107,7 +109,8 @@ còn **concolic** đọc điều kiện trong code nên tìm ra ngay.
 - Bấm một dòng để xem **phản ví dụ, chẩn đoán và log thô** ở panel Chi tiết.
 - *✨ Giải thích bằng AI* chỉ để diễn giải, **không phải bằng chứng**.
 """
-PARAM_DEFAULTS = {"seed": 1, "budget": 2000, "bmc": -1, "timeout": 30, "fuzz_search": "bfs", "fuzz_solver": 1000}
+PARAM_DEFAULTS = {"seed": 1, "budget": 2000, "bmc": -1, "timeout": 30, "fuzz_search": "bfs", "fuzz_solver": 1000,
+                  'c_fuzz_budget': 32}
 
 
 class PipelineWorker(QObject):
@@ -391,6 +394,10 @@ class MainWindow(QMainWindow):
         self.spn_fuzz_solver = _spin(1, 60000, PARAM_DEFAULTS["fuzz_solver"], suffix=" ms",
                                      tip="Timeout mỗi truy vấn Z3 của concolic; UNKNOWN không phải an toàn")
         form.addRow("Timeout Z3 fuzzing", self.spn_fuzz_solver)
+        self.spn_c_fuzz = _spin(0, 10000, PARAM_DEFAULTS['c_fuzz_budget'],
+                                tip='Số input tối đa/hàm C/phiên bản; 0=tắt; dừng ở finding đầu tiên')
+        form.addRow('Ngân sách C · ASan/UBSan', self.spn_c_fuzz)
+        self.spn_c_fuzz.valueChanged.connect(self._update_params_label)
         self.cbo_fuzz_search.currentIndexChanged.connect(self._update_params_label)
         btn_reset = QPushButton("Khôi phục mặc định")
         btn_reset.clicked.connect(self._reset_params)
@@ -435,6 +442,7 @@ class MainWindow(QMainWindow):
         self.spn_budget.setValue(PARAM_DEFAULTS["budget"])
         self.spn_bmc.setValue(PARAM_DEFAULTS["bmc"])
         self.spn_timeout.setValue(PARAM_DEFAULTS["timeout"])
+        self.spn_c_fuzz.setValue(PARAM_DEFAULTS['c_fuzz_budget'])
         if hasattr(self, "cbo_fuzz_search"):
             self.cbo_fuzz_search.setCurrentIndex(0)
             self.spn_fuzz_solver.setValue(PARAM_DEFAULTS["fuzz_solver"])
@@ -446,7 +454,7 @@ class MainWindow(QMainWindow):
         k = self._bmc_depth()
         strat = self.cbo_fuzz_search.currentData() if hasattr(self, "cbo_fuzz_search") else "bfs"
         self.btn_params.setText(f"⚙  seed {self.spn_seed.value()} · fuzz {self.spn_budget.value()} ({strat.upper()}) · "
-                                f"k {'auto' if k is None else k} · {self.spn_timeout.value()}s")
+                                f"C {self.spn_c_fuzz.value()} · k {'auto' if k is None else k} · {self.spn_timeout.value()}s")
 
     def _tab_overview(self) -> QWidget:
         w = QWidget()
@@ -555,17 +563,27 @@ class MainWindow(QMainWindow):
         w = QSplitter(Qt.Orientation.Vertical)
         w.setChildrenCollapsible(False)
         campaigns = QTabWidget()
+        self.fuzz_campaigns = campaigns
         self.tbl_fuzz = _table(["Hàm", "Bản", "Chiến lược", "Đã chạy / Budget", "Hit", "Lần đầu", "Input", "Kết luận"])
         self.tbl_fuzz.itemSelectionChanged.connect(self._on_fuzz_selected)
         campaigns.addTab(self.tbl_fuzz, "Thực thi hàm Python")
         self.tbl_state_fuzz = _table(["Khám phá mô hình", "Độ sâu (cạnh)", "Chuỗi đánh giá", "Phủ State", "Phủ Cạnh", "Vi phạm"])
         self.tbl_state_fuzz.itemSelectionChanged.connect(self._on_state_fuzz_selected)
         campaigns.addTab(self.tbl_state_fuzz, "Chuỗi trạng thái · mô hình đặc tả")
+        self.tbl_c_fuzz = _table(['Hàm C', 'Bản', 'Đã chạy / Budget', 'Hit', 'Input đầu gây lỗi', 'Kết luận', 'Dừng'])
+        self.tbl_c_fuzz.itemSelectionChanged.connect(self._on_c_fuzz_selected)
+        campaigns.addTab(self.tbl_c_fuzz, 'C · ASan/UBSan')
         self.fuzz_workflow = FuzzWorkflow()
         self.fuzz_workflow.runRequested.connect(lambda: self.btn_run.click())
         self.fuzz_workflow.exportRequested.connect(lambda: self.btn_export.click())
+        self.c_fuzz_workflow = CFuzzWorkflow()
+        self.c_fuzz_workflow.exportRequested.connect(lambda: self.btn_export.click())
+        self.fuzz_views = QStackedWidget()
+        self.fuzz_views.addWidget(self.fuzz_workflow)
+        self.fuzz_views.addWidget(self.c_fuzz_workflow)
+        campaigns.currentChanged.connect(self._fuzz_group_changed)
         w.addWidget(campaigns)
-        w.addWidget(self.fuzz_workflow)
+        w.addWidget(self.fuzz_views)
         w.setSizes([180, 620])
         return w
 
@@ -689,6 +707,8 @@ class MainWindow(QMainWindow):
             t.setRowCount(0)
         if hasattr(self, "tbl_state_fuzz"):
             self.tbl_state_fuzz.setRowCount(0)
+        self.tbl_c_fuzz.setRowCount(0)
+        self.c_fuzz_workflow.clear()
         self.fuzz_workflow.clear()
         self.txt_report.clear()
         s = self.spec
@@ -754,7 +774,8 @@ class MainWindow(QMainWindow):
         self.thread = QThread()
         self.worker = PipelineWorker(self.spec, self.spn_seed.value(), self.spn_budget.value(),
                                      bmc_depth=bmc_depth, sanitizer_timeout=self.spn_timeout.value(),
-                                     fuzz_search=fuzz_search, fuzz_solver_timeout_ms=self.spn_fuzz_solver.value())
+                                     fuzz_search=fuzz_search, fuzz_solver_timeout_ms=self.spn_fuzz_solver.value(),
+                                     c_fuzz_budget=self.spn_c_fuzz.value())
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._on_done)
@@ -787,8 +808,9 @@ class MainWindow(QMainWindow):
         unsafe = [b for b in rep.bmc if b.status == "unsafe"]
         smt_open = [s for s in rep.smt if s.overflow_possible and s.patch_status != "unsat"]
         self._set_step("ch3", "fail" if unsafe or smt_open else "pass", len(unsafe) + len(smt_open))
-        fuzz_hits = [r for r in rep.fuzz if r.found and r.version == "v0"]
-        fuzz_incomplete = any(r.status == "inconclusive" for r in rep.fuzz)
+        fuzz_hits = [r for r in [*rep.fuzz, *rep.c_fuzz] if r.found and r.version == "v0"]
+        fuzz_incomplete = (any(r.status == "inconclusive" for r in rep.fuzz)
+                           or any(r.status not in {'clean', 'detected'} for r in rep.c_fuzz))
         self._set_step("ch4", "fail" if fuzz_hits else ("run" if fuzz_incomplete else "pass"), len(fuzz_hits))
         self._set_step("cwe", "fail" if rep.audit.open_findings else "pass", len(rep.audit.confirmed))
 
@@ -796,8 +818,8 @@ class MainWindow(QMainWindow):
         passed = sum(t.status == "PASS" for t in rep.test_results)
         self._set_card("ctl", f"{len(ctl_fail)} / {n_ctl}", "fail" if ctl_fail else "pass")
         self._set_card("bmc", f"{len(unsafe)} / {len(rep.bmc)}", "fail" if unsafe else "pass")
-        self._set_card("fuzz", f"{len(fuzz_hits)} / {sum(r.version == 'v0' for r in rep.fuzz)}",
-                       "fail" if fuzz_hits else "pass")
+        self._set_card("fuzz", f"{len(fuzz_hits)} / {sum(r.version == 'v0' for r in [*rep.fuzz, *rep.c_fuzz])}",
+                       "fail" if fuzz_hits else ('warn' if fuzz_incomplete else "pass"))
         self._set_card("cwe", f"{len(rep.audit.confirmed)}", "fail" if rep.audit.open_findings else "pass")
         self._set_card("tc", f"{passed} / {len(rep.test_results)}",
                        "pass" if passed == len(rep.test_results) else "fail")
@@ -843,6 +865,11 @@ class MainWindow(QMainWindow):
                                   for v, m in rep.metrics])
 
         # Ch.4
+        self.c_fuzz_workflow.clear()
+        self._fill(self.tbl_c_fuzz, [[r.function, r.version, f'{r.iterations}/{r.budget}', r.hits,
+                                     r.first_input or '—', r.verdict, r.stop_reason] for r in rep.c_fuzz], status_col=5)
+        if rep.c_fuzz:
+            self.tbl_c_fuzz.selectRow(0)
         self._fill(self.tbl_fuzz, [[r.function, r.version,
                                     f"{r.strategy} ({r.search_strategy.upper()})" if r.search_strategy != "none" else r.strategy,
                                     f"{r.iterations} / {r.budget}", r.hits, r.first_hit or "—",
@@ -869,6 +896,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(msg)
         self._log(rep.audit.summary_text)
         self._log(msg)
+        self._fuzz_group_changed(self.fuzz_campaigns.currentIndex())
 
     # ------------------------------------------------------------------ selections
     def _on_ctl_selected(self) -> None:
@@ -1044,6 +1072,19 @@ class MainWindow(QMainWindow):
                           f"<p>{r.hits}/{r.iterations} lần thử gây lỗi, {r.seconds * 1000:.1f} ms</p>"
                           f"<p><b>Lần đầu:</b> {r.first_hit or '—'} · <b>Input:</b> {r.first_input or '—'} · "
                           f"<b>Loại:</b> {r.finding or '—'}</p>" + _raw("\n".join(r.events)))
+
+    def _fuzz_group_changed(self, index):
+        self.fuzz_views.setCurrentIndex(1 if index == 2 else 0)
+        [self._on_fuzz_selected, self._on_state_fuzz_selected, self._on_c_fuzz_selected][index]()
+
+    def _on_c_fuzz_selected(self):
+        row = self.tbl_c_fuzz.currentRow()
+        if self.report and 0 <= row < len(self.report.c_fuzz):
+            r = self.report.c_fuzz[row]
+            self.c_fuzz_workflow.set_campaign(self.report, r)
+            self._inspect(f'<h3>{html.escape(r.function)} · {r.version} · ASan/UBSan</h3>'
+                          + _raw(f'{r.verdict}\n{r.iterations}/{r.budget} lần; {r.stop_reason}\n{r.note}\n'
+                                 + '\n'.join(t['log'] for t in r.trials if t['status'] != 'clean')))
 
     def _on_state_fuzz_selected(self) -> None:
         row = self.tbl_state_fuzz.currentRow()

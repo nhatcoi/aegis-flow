@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.fuzz_evidence import STOP_LABELS, replay_input, result_label
-from core.fuzzing import state_fuzz
+from core.fuzzing import generated_oracle_kind, state_fuzz
 
 PAGE_SIZE = 100
 STAGES = [
@@ -192,7 +192,8 @@ class FuzzWorkflow(QWidget):
                      "phiên bản": result.version, "chiến lược": result.strategy,
                      "seed": result.seed, "seed corpus": [1] * len(self.generated.spec.params),
                      "miền input": "int32", "budget tối đa": result.budget,
-                     "đã thực thi": result.iterations, "oracle": self.generated.spec.kind,
+                     "đã thực thi": result.iterations, "oracle": generated_oracle_kind(self.generated, result.version),
+                     "giả định / phạm vi": result.assumptions,
                      "kết thúc": STOP_LABELS.get(result.stop_reason, result.stop_reason),
                      "solver timeout (ms)": result.solver_timeout_ms if result.strategy == 'concolic' else 'không dùng'}
         self.setup.setHtml('<h3>Input của chiến dịch</h3><pre>' + pretty(setup) + '</pre>'

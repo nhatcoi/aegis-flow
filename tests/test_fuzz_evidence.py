@@ -6,7 +6,7 @@ import z3
 
 from core.codegen import generate_function_code
 from core.fuzz_evidence import export_fuzz_evidence, replay_input
-from core.fuzzing import blackbox_fuzz, concolic_fuzz, fuzz_generated, load_function, state_fuzz
+from core.fuzzing import blackbox_fuzz, concolic_fuzz, load_function, state_fuzz
 from core.pipeline import run_pipeline
 from core.spec_loader import FunctionSpec, StateMachine, load_specification
 
@@ -49,16 +49,17 @@ def test_solver_models_replay_and_queries_are_valid_smtlib(monkeypatch):
     assert replay[0]['code_sha256'] != replay[1]['code_sha256']
 
 
-def test_unsat_and_unsupported_remain_distinct():
+def test_unsat_and_unsupported_remain_distinct(monkeypatch):
     code = 'def f(x):\n    if x > 10:\n        if x < 5:\n            return True\n    return False\n'
     result = concolic_fuzz(load_function(code, 'f'), code, 'magic_value', 30)
     assert not result.found
     assert any(q['status'] == 'unsat' and q['generated_input'] is None for q in result.queries)
-    gf = magic()
-    patched = next(r for r in fuzz_generated(gf, budget=10) if r.version == 'v1' and r.strategy == 'concolic')
-    assert patched.status == 'inconclusive'
-    assert patched.stop_reason == 'unsupported'
-    assert patched.iterations == 1
+    monkeypatch.delenv('WEBHOOK_SECRET', raising=False)
+    code = 'import os\ndef f(x):\n    return os.environ.get(str(x), "")\n'
+    unsupported = concolic_fuzz(load_function(code, 'f'), code, 'magic_value', 10)
+    assert unsupported.status == 'inconclusive'
+    assert unsupported.stop_reason == 'unsupported'
+    assert unsupported.iterations == 1
 
 
 def test_state_coverage_counts_evaluated_paths_not_queued_neighbors():

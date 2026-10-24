@@ -126,6 +126,8 @@ def generate_markdown_report(rep: PipelineReport) -> str:
     L += ["## 5. Chương 4 — Fuzzing", ""]
     if rep.fuzz:
         L += ["### Fuzzing hàm (Data Input Fuzzing: Blackbox, Coverage-guided, Whitebox Concolic)", ""]
+        L += [f'> {assumption}' for assumption in dict.fromkeys(a for r in rep.fuzz for a in r.assumptions)]
+        L += ['']
         L += _table(["Hàm", "Bản", "Chiến lược", "Tìm kiếm", "Lần thử", "Số lỗi", "Lần đầu tìm thấy", "Input", "Loại", "Thời gian", "Kết luận / Lý do dừng"],
                     [[r.function, r.version, r.strategy, r.search_strategy.upper() if r.search_strategy != "none" else "—",
                       r.iterations, r.hits, r.first_hit or "—", r.first_input or "—", r.finding or "—",
@@ -133,6 +135,16 @@ def generate_markdown_report(rep: PipelineReport) -> str:
                       result_label(r) + "; " + STOP_LABELS.get(r.stop_reason, r.stop_reason)] for r in rep.fuzz])
     else:
         L += ["*Không có hàm Python để fuzz.*", ""]
+
+    if rep.c_fuzz:
+        L += ['### Fuzzing C · ASan/UBSan', '',
+              ('Black-box có seed; biên dịch một lần, chạy từng stdin trong tiến trình riêng. '
+              'Dừng ở finding đầu tiên; không đo native coverage. '
+              'Input và log đầy đủ: `fuzz_runs/<run_id>/c_*/`.'), '']
+        L += _table(['Hàm', 'Bản', 'Đã chạy / Budget', 'Hit', 'Input đầu gây lỗi', 'Kết luận', 'Lý do dừng'],
+                    [[r.function, r.version, f'{r.iterations}/{r.budget}', r.hits,
+                      r.first_input or '—', r.verdict, r.stop_reason] for r in rep.c_fuzz])
+        L += [f'> {note}' for note in sorted({r.note for r in rep.c_fuzz if r.note})] + ['']
 
     if getattr(rep, "state_fuzz", None):
         L += ["", "### Fuzzing phát sinh chuỗi trạng thái (State Sequence Fuzzing)", ""]
@@ -255,6 +267,8 @@ def summary_dict(rep: PipelineReport) -> dict:
                  "model": s.overflow_values, "exact_value": s.overflow_evaluated, "bv_wrapped": s.wrapped_value,
                  "patch": s.patch_status} for s in rep.smt],
         "fuzz": [{k: v for k, v in asdict(r).items() if k not in {"events", "trials", "queries"} and not k.startswith("_")} for r in rep.fuzz],
+        'c_fuzz': [{**{k: v for k, v in asdict(r).items()
+                      if k not in {'trials', 'source', 'harness'}}, 'verdict': r.verdict} for r in rep.c_fuzz],
         "state_fuzz": [{k: v for k, v in asdict(r).items() if k not in {"events", "trials"}}
                        for r in rep.state_fuzz],
         "findings": [{"cwe": f.cwe_id, "name": f.cwe_name, "severity": f.severity, "component": f.source_component,

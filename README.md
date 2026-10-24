@@ -68,6 +68,7 @@ những gì công cụ thực sự tái hiện được.
 | **3** | AST, McCabe | Biến, điều kiện, vòng lặp, V(G), độ sâu lồng nhau cho C và Python | `core/static_ast.py` |
 | **3** | SMT (Z3) | Mọi biến ràng buộc trong miền int32; lý thuyết **bit-vector** để thấy wrap-around thật; **chứng minh bản vá** bằng UNSAT | `core/arithmetic_z3.py` |
 | **4** | Fuzzing dữ liệu (Hàm) | Black-box, coverage-guided (hill climbing theo line coverage), **concolic** (path condition từ AST + Z3, hỗ trợ duyệt **BFS** và **DFS**). Cùng ngân sách, seed cố định. Mã sinh ra chạy trong sandbox kiểm tra AST | `core/fuzzing.py` |
+| **4** | Fuzzing C + ASan/UBSan | Sinh input biên và ngẫu nhiên có seed, biên dịch một lần, chạy mỗi stdin trong tiến trình riêng; lưu input/log, replay cùng bytes trên v0/v1. Black-box, chưa đo native coverage | `core/c_fuzzing.py` |
 | **4** | Fuzzing chuỗi trạng thái | Phát sinh chuỗi trạng thái theo **BFS, DFS** và **Coverage-guided mutation** từ seed paths; phát hiện **Crash, Deadlock** (CWE-833) và vi phạm bất biến (CWE-693, CWE-667) | `core/fuzzing.py` |
 | — | Gộp CWE theo bằng chứng | Ánh xạ CWE theo bảng của học phần; trạng thái v0/v1; lỗi khai báo mà không công cụ nào tái hiện được bị đánh dấu `declared-only` | `core/cwe_analyzer.py` |
 | — | Test case tự đánh giá | Đọc câu "kết quả mong đợi" (vd `Không phát hiện CWE-120 tại parse_webhook_signature`, `AG(shipped -> paid) ĐÚNG`) rồi chấm PASS/FAIL | `core/pipeline.py` |
@@ -125,6 +126,7 @@ uv run python -m core.pipeline dataset/specs_excel/payment_gateway_v0_spec.xlsx 
 |---|---|
 | `--seed N` | Seed của fuzzer, giúp tái tạo kết quả (mặc định 1) |
 | `--budget N` | Số lần thử cho mỗi chiến lược fuzzing (mặc định 2000) |
+| `--c-fuzz-budget N` | Số input tối đa cho mỗi hàm C/phiên bản với ASan/UBSan (mặc định 32, 0 = tắt); dừng ở finding đầu tiên |
 | `--bmc-depth K` | Độ sâu tối đa của BMC (mặc định = completeness threshold của mô hình) |
 | `--sanitizer-timeout S` | Thời gian tối đa (giây) cho mỗi lần chạy harness ASan/UBSan (mặc định 30) |
 | `--out DIR` | Thư mục xuất (mặc định `results/<tên đặc tả>`) |
@@ -149,6 +151,26 @@ hỗ trợ được ghi **chưa đủ kết luận**. Chuỗi trạng thái đư
 
 Xem [hướng dẫn input/output và kịch bản trình bày với giáo viên](docs/fuzzing-demo.md).
 Timeout mỗi truy vấn concolic đặt bằng `--fuzz-solver-timeout MS` (mặc định 1000 ms), hoặc nút ⚙.
+
+**Fuzzing C kết hợp ASan/UBSan:** trong Ch.4 chọn nhóm **C · ASan/UBSan** để xem từng input,
+log sanitizer và replay trên hai bản. Cấu hình ⚙ có ngân sách C riêng (mặc định 32 input/hàm/phiên bản);
+timeout mỗi input dùng chung `Timeout sanitizer`. Engine hỗ trợ `buffer_copy` (chuỗi), `arithmetic`
+(hai số int32) và `alloc_release` (số lần gọi 1–8; hàm gốc không có tham số). Mỗi chiến dịch dừng ở
+finding đầu tiên, timeout hoặc exit bất thường. Đây là black-box có input biên/ngẫu nhiên; chưa có
+coverage-guided native fuzzing hoặc libFuzzer. Thiếu compiler, lỗi build, timeout/exit bất thường
+không có chẩn đoán sanitizer được báo chưa đủ kết luận. Nếu timeout sau khi sanitizer đã báo lỗi,
+finding vẫn được giữ cùng trạng thái timeout và log chưa hoàn tất.
+
+```bash
+uv run python -m core.pipeline dataset/specs_excel/payment_gateway_v0_spec.xlsx \
+  --seed 1 --budget 2000 --c-fuzz-budget 32 --out results/asan_fuzz_demo
+```
+
+Sau khi xuất, `fuzz_runs/<run_id>/c_*/` chứa source C, `harness.c`, `campaign.json`, `events.jsonl`,
+`crashes.json`, file `crash_*.stdin`, `crash_*.log` và `REPLAY.md` với lệnh biên dịch/chạy lại.
+Các replay bấm trong GUI được lưu vào `replay_results.json` khi xuất sau đó. `--no-tools` tắt cả
+sanitizer harness cố định và fuzzing C. Trên macOS không bật LeakSanitizer; kết quả sạch ở đây không
+xác nhận động rằng không có memory leak.
 
 ## Kết quả trên đặc tả cổng thanh toán
 
@@ -268,9 +290,13 @@ tests/       pytest
 - **Static scanner** dựa trên mẫu, chỉ trong phạm vi một hàm, không phân tích alias, nên không sound cũng không
   complete. Finding của nó được đối chiếu với ASan.
 - **LeakSanitizer không hỗ trợ macOS**, nên CWE-401 trên macOS chỉ có bằng chứng tĩnh. Chạy trên Linux để có log leak.
-- **Sanitizer** chỉ chạy một input độc hại cho mỗi hàm; tính an toàn của bản vá số học được chứng minh bằng Z3.
-- **Concolic** chỉ mô hình hóa tập con cú pháp Python của mã sinh ra. Hàm gọi thư viện ngoài (`os.environ`, `hmac`)
-  được ghi nhận là "không mô hình hóa được".
+- **Sanitizer Ch.2** chạy một input harness cố định cho mỗi hàm. **Fuzzing C Ch.4** chạy nhiều input
+  trong ngân sách riêng và dừng ở finding đầu tiên; chưa có native coverage feedback.
+  Tính an toàn của bản vá số học được kiểm tra thêm bằng Z3 theo các tiền điều kiện đã mã hóa.
+- **Concolic** chỉ mô hình hóa tập con cú pháp Python của mã sinh ra. Đã hỗ trợ đọc cấu hình
+  `os.environ.get` với tên khóa cố định và kết quả `hmac.compare_digest` cho chuỗi `int32:int32`
+  của mã xác thực sinh ra. Cấu hình môi trường được giữ cố định trong chiến dịch; không chứng minh
+  mọi cấu hình hoặc tính chất timing. Các lời gọi khác chưa có mô hình vẫn báo chưa đủ kết luận.
 
 ## Lịch sử repo
 
