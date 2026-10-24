@@ -136,6 +136,20 @@ uv run python -m core.pipeline dataset/specs_excel/payment_gateway_v0_spec.xlsx 
 (đã nằm trong `.gitignore`): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` (hoặc `AEGIS_AI_*`). Phần diễn giải
 được gắn nhãn *không phải bằng chứng*, không ảnh hưởng tới kết luận PASS/FAIL, CWE hay thư mục `results/`.
 
+## Quy trình Chương 4 trên giao diện
+
+Chọn một chiến dịch trong tab **Ch.4 Fuzzing** để xem 6 bước: **Chuẩn bị → Sinh input →
+Thực thi/Coverage → Đường đi/Z3 → Replay v0/v1 → Bằng chứng/Demo**. Timeline phân trang giữ đủ
+mọi input; cây sinh input liên kết truy vấn và model Z3 với lần chạy cụ thể. Nút Replay chạy cùng
+input trên hai phiên bản. Các bước duyệt bằng chứng đã ghi sau khi pipeline hoàn tất.
+
+Mỗi lần xuất có thư mục `fuzz_runs/<run_id>/` riêng, chứa log JSONL đầy đủ, source/hash, corpus,
+crash, coverage, graph DOT, truy vấn SMT-LIB/model và các lần replay. Concolic gặp thư viện chưa
+hỗ trợ được ghi **chưa đủ kết luận**. Chuỗi trạng thái được ghi rõ là khám phá mô hình đặc tả.
+
+Xem [hướng dẫn input/output và kịch bản trình bày với giáo viên](docs/fuzzing-demo.md).
+Timeout mỗi truy vấn concolic đặt bằng `--fuzz-solver-timeout MS` (mặc định 1000 ms), hoặc nút ⚙.
+
 ## Kết quả trên đặc tả cổng thanh toán
 
 Đặc tả chính mô tả một cổng thanh toán thương mại điện tử: vòng đời đơn hàng (tạo, chờ cổng, timeout, đối soát,

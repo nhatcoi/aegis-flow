@@ -54,6 +54,7 @@ class PipelineReport:
     smt: list[SMTCheckResult] = field(default_factory=list)
     fuzz: list[FuzzResult] = field(default_factory=list)
     state_fuzz: list[StateFuzzResult] = field(default_factory=list)
+    fuzz_replays: list = field(default_factory=list)
     audit: SecurityAuditReport | None = None
     test_results: list[TestCaseResult] = field(default_factory=list)
     environment: dict[str, str] = field(default_factory=dict)
@@ -156,7 +157,7 @@ def evaluate_test_case(tc: TestCase, rep: PipelineReport) -> TestCaseResult:
 def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
                  run_tools: bool = True, workdir: Path | None = None,
                  bmc_depth: int | None = None, sanitizer_timeout: int = 30,
-                 fuzz_search: str = "bfs") -> PipelineReport:
+                 fuzz_search: str = "bfs", fuzz_solver_timeout_ms: int = 1000) -> PipelineReport:
     """``bmc_depth=None`` runs BMC up to the completeness threshold (reachability diameter)."""
     rep = PipelineReport(spec, seed, fuzz_budget,
                          environment=environment_info(seed, fuzz_budget, bmc_depth, sanitizer_timeout))
@@ -212,7 +213,8 @@ def run_pipeline(spec: Specification, seed: int = 1, fuzz_budget: int = 2000, *,
 
     with timed("ch4_fuzz"):
         for gf in rep.functions:
-            rep.fuzz.extend(fuzz_generated(gf, fuzz_budget, seed, concolic_strategy=fuzz_search))
+            rep.fuzz.extend(fuzz_generated(gf, fuzz_budget, seed, concolic_strategy=fuzz_search,
+                                           solver_timeout_ms=fuzz_solver_timeout_ms))
         if spec.state_machine and spec.state_machine.states:
             deadlocks = set(rep.kripke.deadlock_states) if rep.kripke else None
             rep.state_fuzz = fuzz_state_machine(
@@ -237,6 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--budget", type=int, default=2000, help="Số lần thử fuzzing cho mỗi chiến lược")
     parser.add_argument("--fuzz-search", choices=["bfs", "dfs"], default="bfs",
                         help="Chiến lược duyệt cây đường đi cho Concolic Fuzzing (mặc định: bfs)")
+    parser.add_argument("--fuzz-solver-timeout", type=int, default=1000, metavar="MS",
+                        help="Timeout mỗi truy vấn Z3 concolic (ms)")
     parser.add_argument("--bmc-depth", type=int, metavar="K",
                         help="Độ sâu tối đa của BMC (mặc định: completeness threshold của mô hình)")
     parser.add_argument("--sanitizer-timeout", type=int, default=30, metavar="GIÂY",
@@ -252,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     spec = load_specification(args.spec)
     out = args.out or Path("results") / spec.name
     opts = {"run_tools": not args.no_tools, "bmc_depth": args.bmc_depth,
-            "sanitizer_timeout": args.sanitizer_timeout, "fuzz_search": args.fuzz_search}
+            "sanitizer_timeout": args.sanitizer_timeout, "fuzz_search": args.fuzz_search, "fuzz_solver_timeout_ms": args.fuzz_solver_timeout}
     rep = run_pipeline(spec, args.seed, args.budget, workdir=out / "build", **opts)
     write_results(rep, out)
     if args.compare:

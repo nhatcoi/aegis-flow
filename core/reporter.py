@@ -23,6 +23,8 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib.figure import Figure
 
+from .fuzz_evidence import STOP_LABELS, result_label
+
 if TYPE_CHECKING:
     from .pipeline import PipelineReport
 
@@ -124,15 +126,17 @@ def generate_markdown_report(rep: PipelineReport) -> str:
     L += ["## 5. Chương 4 — Fuzzing", ""]
     if rep.fuzz:
         L += ["### Fuzzing hàm (Data Input Fuzzing: Blackbox, Coverage-guided, Whitebox Concolic)", ""]
-        L += _table(["Hàm", "Bản", "Chiến lược", "Tìm kiếm", "Lần thử", "Số lỗi", "Lần đầu tìm thấy", "Input", "Loại", "Thời gian"],
+        L += _table(["Hàm", "Bản", "Chiến lược", "Tìm kiếm", "Lần thử", "Số lỗi", "Lần đầu tìm thấy", "Input", "Loại", "Thời gian", "Kết luận / Lý do dừng"],
                     [[r.function, r.version, r.strategy, r.search_strategy.upper() if r.search_strategy != "none" else "—",
                       r.iterations, r.hits, r.first_hit or "—", r.first_input or "—", r.finding or "—",
-                      f"{r.seconds * 1000:.1f} ms"] for r in rep.fuzz])
+                      f"{r.seconds * 1000:.1f} ms",
+                      result_label(r) + "; " + STOP_LABELS.get(r.stop_reason, r.stop_reason)] for r in rep.fuzz])
     else:
         L += ["*Không có hàm Python để fuzz.*", ""]
 
     if getattr(rep, "state_fuzz", None):
         L += ["", "### Fuzzing phát sinh chuỗi trạng thái (State Sequence Fuzzing)", ""]
+        L += ["Phạm vi: duyệt mô hình đặc tả, không thực thi hệ thống thanh toán thật. Độ sâu đếm số cạnh; độ phủ chỉ tính chuỗi đã đánh giá.", ""]
         L += ["Khám phá không gian trạng thái theo cả 3 chiến lược: **BFS** (chiều rộng), **DFS** (chiều sâu) và **Coverage-guided** (đột biến chuỗi trạng thái từ seed data).", ""]
         L += _table(["Chiến lược", "Độ sâu k", "Đường đi thử", "Độ phủ State", "Độ phủ Chuyển tiếp", "Số crash / lỗi", "Thời gian"],
                     [[r.strategy.upper(), r.max_depth, r.paths_explored, f"{r.state_coverage * 100:.1f}%",
@@ -250,7 +254,9 @@ def summary_dict(rep: PipelineReport) -> dict:
         "smt": [{"name": s.name, "condition_sat": s.condition_sat, "overflow": s.overflow_possible,
                  "model": s.overflow_values, "exact_value": s.overflow_evaluated, "bv_wrapped": s.wrapped_value,
                  "patch": s.patch_status} for s in rep.smt],
-        "fuzz": [{k: v for k, v in asdict(r).items() if k != "events"} for r in rep.fuzz],
+        "fuzz": [{k: v for k, v in asdict(r).items() if k not in {"events", "trials", "queries"} and not k.startswith("_")} for r in rep.fuzz],
+        "state_fuzz": [{k: v for k, v in asdict(r).items() if k not in {"events", "trials"}}
+                       for r in rep.state_fuzz],
         "findings": [{"cwe": f.cwe_id, "name": f.cwe_name, "severity": f.severity, "component": f.source_component,
                       "status": f.status, "tools": f.tools, "before": f.evidence, "after": f.after,
                       "fixed": f.fixed, "requirements": f.requirement_ids} for f in rep.audit.findings],
@@ -311,18 +317,22 @@ def write_results(rep: PipelineReport, out: Path) -> Path:
                         " ; ".join(m.loops), m.cyclomatic, m.nesting_depth, m.lines_of_code])
     (logs / "z3.txt").write_text("\n\n".join(s.details for s in rep.smt) + "\n", encoding="utf-8")
 
-    # Chương 4
+    # Chương 4: full structured evidence in a separate folder for every export.
+    from .fuzz_evidence import export_fuzz_evidence
+
+    export_fuzz_evidence(rep, out)
     with open(logs / "fuzz.csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["function", "version", "strategy", "budget", "iterations", "hits", "first_hit",
-                    "first_input", "finding", "cwe", "seconds", "lines_covered"])
+                    "first_input", "finding", "cwe", "seconds", "lines_covered", "status", "stop_reason", "unique_findings"])
         for r in rep.fuzz:
             w.writerow([r.function, r.version, r.strategy, r.budget, r.iterations, r.hits, r.first_hit,
-                        r.first_input, r.finding, r.cwe, f"{r.seconds:.6f}", r.lines_covered])
+                        r.first_input, r.finding, r.cwe, f"{r.seconds:.6f}", r.lines_covered, r.status, r.stop_reason, r.unique_findings])
     events = []
     for r in rep.fuzz:
         events.append(f"== {r.function} {r.version} {r.strategy}")
-        events += [f"  {e}" for e in r.events[:50]]
+        events += [f"  {e}" for e in r.events]
+        events += ["  EXEC " + json.dumps(t, ensure_ascii=False, default=str) for t in r.trials]
     (logs / "fuzz_events.txt").write_text("\n".join(events) + "\n", encoding="utf-8")
 
     if getattr(rep, "state_fuzz", None):

@@ -19,6 +19,7 @@ import itertools
 import random
 import sys
 import time
+import traceback
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -75,15 +76,16 @@ class Outcome:
     finding: str | None  # e.g. "ZeroDivisionError", "bypass", None
     cwe: str | None
     value: Any = None
+    traceback: str = ""
 
 
 def run_oracle(func: Callable, kind: str, args: tuple) -> Outcome:
     try:
         value = func(*args)
     except ZeroDivisionError:
-        return Outcome("ZeroDivisionError", "CWE-369")
+        return Outcome("ZeroDivisionError", "CWE-369", traceback=traceback.format_exc())
     except Exception as e:  # noqa: BLE001 - every uncaught exception is a crash for the oracle
-        return Outcome(type(e).__name__, "CWE-248")
+        return Outcome(type(e).__name__, "CWE-248", traceback=traceback.format_exc())
     if kind == "magic_value" and value is True:
         return Outcome("bypass", "CWE-798", value)
     return Outcome(None, None, value)
@@ -105,10 +107,61 @@ class FuzzResult:
     lines_covered: int = 0
     search_strategy: str = "none"  # "bfs" | "dfs" | "none"
     events: list[str] = field(default_factory=list)
+    trials: list[dict[str, Any]] = field(default_factory=list)
+    queries: list[dict[str, Any]] = field(default_factory=list)
+    seed: int | None = None
+    status: str = "not_started"
+    stop_reason: str = ""
+    solver_timeout_ms: int = 1000
+    _covered: set[int] = field(default_factory=set, repr=False)
 
     @property
     def found(self) -> bool:
         return self.first_hit is not None
+
+    @property
+    def unique_findings(self) -> int:
+        return len({(t["finding"], t["trace"][-1] if t["trace"] else None)
+                    for t in self.trials if t["finding"]})
+
+    def observe(self, func: Callable, kind: str, i: int, args: tuple, **origin) -> dict:
+        """Observe execution for evidence; only the coverage strategy uses feedback to select inputs."""
+        trace: list[int] = []
+
+        def tracer(frame, event, arg):
+            if frame.f_code is func.__code__:
+                if event == "line":
+                    trace.append(frame.f_lineno)
+                return tracer
+            return None
+
+        old = sys.gettrace()
+        started = time.perf_counter()
+        sys.settrace(tracer)
+        try:
+            out = run_oracle(func, kind, args)
+        finally:
+            sys.settrace(old)
+        self.iterations = i
+        self.record(i, args, out)
+        covered_before = self._covered.copy()
+        trial = {
+            "iteration": i, "input": list(args), "trace": trace, "lines": sorted(set(trace)),
+            "new_lines": sorted(set(trace) - covered_before), "finding": out.finding,
+            "cwe": out.cwe, "value": out.value, "traceback": out.traceback,
+            "seconds": time.perf_counter() - started, **origin,
+        }
+        self.trials.append(trial)
+        self._covered.update(trace)
+        self.lines_covered = len(self._covered)
+        return trial
+
+    def finish(self, reason: str) -> None:
+        self.stop_reason = reason
+        self.status = "found" if self.found else (
+            "inconclusive" if reason in {"unsupported", "solver_unknown"} else "no_finding")
+        self.events.append(f"Kết thúc: {reason}; {self.iterations}/{self.budget} lần thực thi; "
+                           f"{self.hits} hit, {self.unique_findings} nhóm lỗi.")
 
     def record(self, i: int, args: tuple, out: Outcome) -> None:
         if out.finding is None:
@@ -117,7 +170,7 @@ class FuzzResult:
         if self.first_hit is None:
             self.first_hit, self.first_input = i, args
             self.finding, self.cwe = out.finding, out.cwe
-            self.events.append(f"lần {i}: {out.finding} với input {args}")
+        self.events.append(f"lần {i}: {out.finding} với input {args}")
 
 
 @dataclass
@@ -143,6 +196,10 @@ class StateFuzzResult:
     paths_explored: int = 0
     seconds: float = 0.0
     events: list[str] = field(default_factory=list)
+    trials: list[dict[str, Any]] = field(default_factory=list)
+    budget: int = 0
+    seed: int = 1
+    stop_reason: str = ""
 
     @property
     def has_crash(self) -> bool:
@@ -166,14 +223,15 @@ def blackbox_fuzz(func: Callable, kind: str, budget: int = 1000, seed: int = 1, 
                   name: str = "", version: str = "v0", stop_on_hit: bool = False) -> FuzzResult:
     rng = random.Random(seed)
     res = FuzzResult(name or func.__name__, version, "blackbox", budget)
+    res.seed = seed
     t0 = time.perf_counter()
     for i in range(1, budget + 1):
         args = tuple(_random_int(rng) for _ in range(_arity(func)))
-        res.iterations = i
-        res.record(i, args, run_oracle(func, kind, args))
+        res.observe(func, kind, i, args, origin="random_int32 / boundary")
         if stop_on_hit and res.found:
             break
     res.seconds = time.perf_counter() - t0
+    res.finish("first_hit" if stop_on_hit and res.found else "budget_exhausted")
     return res
 
 
@@ -200,7 +258,7 @@ def _covered_lines(func: Callable, args: tuple, kind: str) -> tuple[set[int], Ou
     return lines, out
 
 
-def _mutate(rng: random.Random, args: tuple) -> tuple:
+def _mutate(rng: random.Random, args: tuple, details: dict | None = None) -> tuple:
     new = list(args)
     i = rng.randrange(len(new))
     op = rng.randrange(5)
@@ -216,6 +274,9 @@ def _mutate(rng: random.Random, args: tuple) -> tuple:
         j = rng.randrange(len(new))
         new[i] = new[j]  # splice between parameters
     new[i] = max(INT32_MIN, min(INT32_MAX, new[i]))
+    if details is not None:
+        details.update(operator=["bit_flip", "arithmetic", "boundary", "random_replace", "parameter_copy"][op],
+                       parameter=i, before=args[i], after=new[i])
     return tuple(new)
 
 
@@ -223,22 +284,28 @@ def coverage_guided_fuzz(func: Callable, kind: str, budget: int = 1000, seed: in
                          name: str = "", version: str = "v0", stop_on_hit: bool = False) -> FuzzResult:
     rng = random.Random(seed)
     res = FuzzResult(name or func.__name__, version, "coverage", budget)
-    corpus = [tuple(SEED_VALUE for _ in range(_arity(func)))]
+    res.seed = seed
+    corpus = [(tuple(SEED_VALUE for _ in range(_arity(func))), None)]
     seen: set[int] = set()
     t0 = time.perf_counter()
     for i in range(1, budget + 1):
-        args = corpus[0] if i == 1 else _mutate(rng, rng.choice(corpus))
-        lines, out = _covered_lines(func, args, kind)
-        res.iterations = i
-        res.record(i, args, out)
+        base, parent = corpus[0] if i == 1 else rng.choice(corpus)
+        mutation: dict = {}
+        args = base if i == 1 else _mutate(rng, base, mutation)
+        trial = res.observe(func, kind, i, args, origin="seed" if i == 1 else "mutation",
+                            parent_iteration=parent, parent_input=list(base), mutation=mutation)
+        lines = set(trial["lines"])
+        trial["kept_in_corpus"] = bool(lines - seen)
         if lines - seen:
             seen |= lines
-            corpus.append(args)
+            corpus.append((args, i))
             res.events.append(f"lần {i}: coverage mới {len(seen)} dòng với input {args}")
+        trial["corpus_size"] = len(corpus)
         if stop_on_hit and res.found:
             break
     res.seconds = time.perf_counter() - t0
     res.lines_covered = len(seen)
+    res.finish("first_hit" if stop_on_hit and res.found else "budget_exhausted")
     return res
 
 
@@ -258,6 +325,7 @@ class _Concolic:
         self.conc = dict(zip(self.params, args))
         self.sym: dict[str, Any] = {p: z3.Int(p) for p in self.params}
         self.path: list[Any] = []
+        self.branches: list[dict] = []
         self.unsupported = False
         try:
             self._block(self.fdef.body)
@@ -278,8 +346,10 @@ class _Concolic:
             if isinstance(st, ast.If):
                 taken = bool(self._eval(st.test))
                 cond = self._sym(st.test)
-                if cond is not None:
-                    self.path.append(cond if taken else z3.Not(cond))
+                if cond is None:
+                    raise _Unsupported
+                self.path.append(cond if taken else z3.Not(cond))
+                self.branches.append({"line": st.lineno, "condition": ast.unparse(st.test), "taken": taken})
                 self._block(st.body if taken else st.orelse)
             elif isinstance(st, ast.Assign) and len(st.targets) == 1 and isinstance(st.targets[0], ast.Name):
                 name = st.targets[0].id
@@ -325,30 +395,38 @@ def concolic_fuzz(
     version: str = "v0",
     stop_on_hit: bool = False,
     search_strategy: str = "bfs",
+    solver_timeout_ms: int = 1000,
 ) -> FuzzResult:
+    if search_strategy not in {"bfs", "dfs"}:
+        raise ValueError("Concolic search must be bfs or dfs")
+    if solver_timeout_ms < 1:
+        raise ValueError("Solver timeout must be positive")
     fdef = next(n for n in ast.walk(ast.parse(code)) if isinstance(n, ast.FunctionDef))
     engine = _Concolic(fdef)
-    strategy_label = "concolic"
-    res = FuzzResult(name or func.__name__, version, strategy_label, budget, search_strategy=search_strategy)
-    worklist = deque([tuple(SEED_VALUE for _ in engine.params)])
+    res = FuzzResult(name or func.__name__, version, "concolic", budget,
+                     search_strategy=search_strategy, solver_timeout_ms=solver_timeout_ms)
+    worklist = deque([(tuple(SEED_VALUE for _ in engine.params), None, None)])
     explored: set[str] = set()
     t0 = time.perf_counter()
-    i = 0
-    is_dfs = search_strategy.lower() == "dfs"
-    while worklist and i < budget:
-        args = worklist.pop() if is_dfs else worklist.popleft()
-        i += 1
-        res.iterations = i
-        res.record(i, args, run_oracle(func, kind, args))
-        if stop_on_hit and res.found:
-            break
+    reason = "worklist_exhausted"
+    unknown_seen = False
+    while worklist and res.iterations < budget:
+        args, parent, query_id = worklist.pop() if search_strategy == "dfs" else worklist.popleft()
+        i = res.iterations + 1
+        trial = res.observe(func, kind, i, args, origin="solver" if query_id else "seed",
+                            parent_iteration=parent, query_id=query_id)
         path = engine.run(args)
-        res.events.append(f"lần {i} ({search_strategy.upper()}): input {args}, path condition: {[str(c) for c in path]}")
+        trial.update(path_condition=[str(c) for c in path], branches=engine.branches,
+                     pending_inputs=len(worklist), symbolic_supported=not engine.unsupported)
+        res.events.append(f"lần {i} ({search_strategy.upper()}): input {args}, "
+                          f"path condition: {trial['path_condition']}")
         if engine.unsupported:
-            res.events.append(
-                "Hàm gọi thư viện/môi trường ngoài (os.environ, hmac) mà engine không mô hình hóa "
-                "được — concolic dừng (giới hạn environment modeling, Ch.4.6)."
-            )
+            res.events.append("Không mô hình hóa được cú pháp/thư viện của đường này; dừng concolic.")
+            reason = "unsupported"
+            break
+        if stop_on_hit and res.found:
+            reason = "first_hit"
+            break
         for k in range(len(path)):
             query = path[:k] + [z3.Not(path[k])]
             key = str(query)
@@ -356,13 +434,35 @@ def concolic_fuzz(
                 continue
             explored.add(key)
             solver = z3.Solver()
-            solver.add(*[z3.And(v >= INT32_MIN, v <= INT32_MAX) for v in engine.sym.values()
-                         if isinstance(v, z3.ArithRef) and z3.is_const(v)])
+            solver.set(timeout=solver_timeout_ms)
+            for param in engine.params:
+                value = z3.Int(param)
+                solver.add(value >= INT32_MIN, value <= INT32_MAX)
             solver.add(*query)
-            if solver.check() == z3.sat:
-                m = solver.model()
-                worklist.append(tuple(m.eval(z3.Int(p), model_completion=True).as_long() for p in engine.params))
+            started = time.perf_counter()
+            status = solver.check()
+            q = {"id": f"q{len(res.queries) + 1}", "iteration": i, "negated_branch": k,
+                 "original_path": trial["path_condition"], "constraints": [str(c) for c in query],
+                 "smt2": solver.to_smt2(), "status": str(status), "model": None,
+                 "generated_input": None, "seconds": time.perf_counter() - started,
+                 "reason_unknown": solver.reason_unknown() if status == z3.unknown else ""}
+            if status == z3.sat:
+                model = solver.model()
+                values = tuple(model.eval(z3.Int(p), model_completion=True).as_long() for p in engine.params)
+                q.update(model=dict(zip(engine.params, values)), generated_input=list(values))
+                worklist.append((values, i, q["id"]))
+            elif status == z3.unknown:
+                unknown_seen = True
+            res.queries.append(q)
+            res.events.append(f"{q['id']}: phủ định nhánh {k + 1} → {status}; model={q['model']}")
+        trial["pending_inputs"] = len(worklist)
+    else:
+        if worklist:
+            reason = "budget_exhausted"
+        elif unknown_seen:
+            reason = "solver_unknown"
     res.seconds = time.perf_counter() - t0
+    res.finish(reason)
     return res
 
 
@@ -374,6 +474,7 @@ def fuzz_generated(
     budget: int = 2000,
     seed: int = 1,
     concolic_strategy: str = "bfs",
+    solver_timeout_ms: int = 1000,
 ) -> list[FuzzResult]:
     """Run the three strategies on v0 and v1 of a generated Python function."""
     if gf.language != "python":
@@ -385,7 +486,10 @@ def fuzz_generated(
         opts = {"name": gf.spec.name, "version": version}
         results.append(blackbox_fuzz(func, kind, budget, seed, **opts))
         results.append(coverage_guided_fuzz(func, kind, budget, seed, **opts))
-        results.append(concolic_fuzz(func, code, kind, budget, search_strategy=concolic_strategy, **opts))
+        results.append(concolic_fuzz(func, code, kind, budget, search_strategy=concolic_strategy,
+                                     solver_timeout_ms=solver_timeout_ms, **opts))
+    for result in results:
+        result.seed = seed
     return results
 
 
@@ -413,6 +517,10 @@ def state_fuzz(
       sequences, saving any path that visits a new state or fires a new transition.
     * 'random_walk': Random walk exploration without feedback.
     """
+    if strategy.lower() not in {"bfs", "dfs", "coverage", "random_walk"}:
+        raise ValueError("Unknown state exploration strategy")
+    if max_depth < 0 or budget < 0:
+        raise ValueError("Depth and budget must be non-negative")
     t0 = time.perf_counter()
     rng = random.Random(seed)
     states = list(sm.states)
@@ -430,7 +538,8 @@ def state_fuzz(
     strat = strategy.lower()
     res = StateFuzzResult(name or getattr(sm, "name", "StateMachine"), version, strat, max_depth, [], [], 0.0, 0.0)
 
-    discovered_states: set[str] = set(initial)
+    res.budget, res.seed = budget, seed
+    discovered_states: set[str] = set()
     fired_transitions: set[tuple[str, str]] = set()
     crashes: list[StateCrash] = []
     seen_crash_keys: set[tuple[str, str]] = set()
@@ -446,10 +555,12 @@ def state_fuzz(
             "conflict",
             "shipped_unpaid",
             "duplicate_capture",
+            "double_capture",
+            "unpaid_shipping",
         }
         if bad_labels:
-            tag = next(iter(bad_labels))
-            cwe = "CWE-667" if "conflict" in tag or "lock" in tag else "CWE-693"
+            tag = min(bad_labels)
+            cwe = "CWE-667" if "conflict" in tag or "lock" in tag or {"webhook_locked", "recon_locked"} <= labels else "CWE-693"
             return StateCrash(
                 kind="invariant_violation",
                 state=curr,
@@ -457,15 +568,11 @@ def state_fuzz(
                 message=f"Phát hiện nhãn vi phạm '{tag}' tại trạng thái {curr}",
                 cwe=cwe,
             )
-        curr_lower = curr.lower()
-        if "unpaid" in curr_lower or "conflict" in curr_lower or "duplicate" in curr_lower:
-            return StateCrash(
-                kind="invariant_violation",
-                state=curr,
-                path=path,
-                message=f"Rơi vào trạng thái vi phạm an toàn logic: {curr}",
-                cwe="CWE-693",
-            )
+        if ({"shipped", "paid"}.intersection(labels) == {"shipped"}
+                or {"webhook_locked", "recon_locked"} <= labels):
+            return StateCrash("invariant_violation", curr, path,
+                              "Vi phạm shipped → paid hoặc loại trừ khóa webhook/đối soát",
+                              "CWE-667" if "webhook_locked" in labels else "CWE-693")
         if (known_deadlocks and curr in known_deadlocks) or (
             len(succ.get(curr, [])) == 0
             and curr.upper() not in {"SUCCEEDED", "FAILED", "REFUNDED", "TERMINATED", "END", "DONE"}
@@ -484,9 +591,31 @@ def state_fuzz(
         if key not in seen_crash_keys:
             seen_crash_keys.add(key)
             crashes.append(c)
-            res.events.append(f"[{strat.upper()}] Crash: {c.message} sau {len(c.path)} bước: {' -> '.join(c.path)}")
+            res.events.append(f"[{strat.upper()}] Crash: {c.message} sau {len(c.path) - 1} chuyển tiếp: {' -> '.join(c.path)}")
+
+    def assess(path: list[str]) -> None:
+        previous_states = len(discovered_states)
+        previous_edges = len(fired_transitions)
+        discovered_states.update(path)
+        fired_transitions.update(itertools.pairwise(path))
+        findings = []
+        for end in range(1, len(path) + 1):
+            crash = check_crash(path[:end])
+            if crash:
+                record_crash(crash)
+                findings.append({"state": crash.state, "kind": crash.kind, "cwe": crash.cwe})
+        res.trials.append({"iteration": paths_count, "path": list(path), "depth": len(path) - 1,
+                           "new_states": len(discovered_states) - previous_states,
+                           "new_transitions": len(fired_transitions) - previous_edges,
+                           "states_evaluated": len(discovered_states),
+                           "transitions_evaluated": len(fired_transitions), "findings": findings})
 
     init_paths = [list(p) for p in seed_paths] if seed_paths else [[s] for s in initial]
+    for path in init_paths:
+        if (not path or path[0] not in initial or len(path) - 1 > max_depth
+                or any(state not in states for state in path)
+                or any(dst not in succ[src] for src, dst in itertools.pairwise(path))):
+            raise ValueError("Seed path must be an initial, valid path within the depth bound")
 
     if strat == "bfs":
         worklist = deque(init_paths)
@@ -494,14 +623,9 @@ def state_fuzz(
             path = worklist.popleft()
             paths_count += 1
             curr = path[-1]
-            discovered_states.add(curr)
-            crash = check_crash(path)
-            if crash:
-                record_crash(crash)
-            if len(path) < max_depth:
+            assess(path)
+            if len(path) - 1 < max_depth:
                 for nxt in succ.get(curr, []):
-                    fired_transitions.add((curr, nxt))
-                    discovered_states.add(nxt)
                     if path.count(nxt) < 2:
                         worklist.append(path + [nxt])
 
@@ -511,14 +635,9 @@ def state_fuzz(
             path = worklist_stack.pop()
             paths_count += 1
             curr = path[-1]
-            discovered_states.add(curr)
-            crash = check_crash(path)
-            if crash:
-                record_crash(crash)
-            if len(path) < max_depth:
+            assess(path)
+            if len(path) - 1 < max_depth:
                 for nxt in reversed(succ.get(curr, [])):
-                    fired_transitions.add((curr, nxt))
-                    discovered_states.add(nxt)
                     if path.count(nxt) < 2:
                         worklist_stack.append(path + [nxt])
 
@@ -534,22 +653,18 @@ def state_fuzz(
             path = list(base)
             steps_to_take = rng.randint(1, 4)
             for _ in range(steps_to_take):
-                if len(path) >= max_depth:
+                if len(path) - 1 >= max_depth:
                     break
                 curr = path[-1]
                 nxts = succ.get(curr, [])
                 if not nxts:
                     break
                 nxt = rng.choice(nxts)
-                fired_transitions.add((curr, nxt))
-                discovered_states.add(nxt)
                 path.append(nxt)
                 if path.count(nxt) >= 3:
                     break
 
-            crash = check_crash(path)
-            if crash:
-                record_crash(crash)
+            assess(path)
 
             if is_cov:
                 new_states = set(path) - seen_states
@@ -571,6 +686,7 @@ def state_fuzz(
     res.transition_coverage = len(fired_transitions) / len(unique_trans) if unique_trans else 0.0
     res.crashes = crashes
     res.paths_explored = paths_count
+    res.stop_reason = "budget_exhausted" if paths_count >= budget else "bounded_exploration_complete"
     res.seconds = time.perf_counter() - t0
     return res
 
